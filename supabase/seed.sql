@@ -260,3 +260,12 @@ begin
     returning id into invoice_overdue_id;
   end if;
 end $$;
+
+-- ---------------------------------------------------------------------
+-- First admin account. Pre-provisioned so Priyanka can log in once auth
+-- is wired up; auth_user_id is linked automatically on first sign-in
+-- (see app/auth/callback/route.ts).
+-- ---------------------------------------------------------------------
+insert into internal_users (email, name, role)
+values ('priyanka.s@hipla.io', 'Priyanka Shinde', 'admin')
+on conflict (email) do nothing;
