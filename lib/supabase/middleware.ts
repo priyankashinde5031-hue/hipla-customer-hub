@@ -43,11 +43,34 @@ export async function updateSession(request: NextRequest) {
 
   if (user && !isPublicPath) {
     const email = user.email ?? "";
+
     if (!email.toLowerCase().endsWith(ALLOWED_EMAIL_DOMAIN)) {
       await supabase.auth.signOut();
       const url = request.nextUrl.clone();
       url.pathname = "/access-denied";
       return NextResponse.redirect(url);
+    }
+
+    // Gate on a matching active internal_users row, regardless of whether
+    // they signed in via magic link or password — both paths land here.
+    const { data: internalUser } = await supabase
+      .from("internal_users")
+      .select("id, auth_user_id, is_active")
+      .eq("email", email)
+      .maybeSingle();
+
+    if (!internalUser || !internalUser.is_active) {
+      await supabase.auth.signOut();
+      const url = request.nextUrl.clone();
+      url.pathname = "/access-denied";
+      return NextResponse.redirect(url);
+    }
+
+    if (internalUser.auth_user_id !== user.id) {
+      await supabase
+        .from("internal_users")
+        .update({ auth_user_id: user.id })
+        .eq("id", internalUser.id);
     }
   }
 
