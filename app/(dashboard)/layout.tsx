@@ -34,6 +34,12 @@ export default async function DashboardLayout({
           >
             Organizations
           </Link>
+          <Link
+            href="/settings"
+            className="rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+          >
+            Settings
+          </Link>
         </nav>
 
         <div className="mt-auto px-2">
