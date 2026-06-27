@@ -11,6 +11,16 @@ You are the coding agent building the **Hipla Customer Hub**. This file is your 
 
 ---
 
+## Current status (read this first)
+
+- **Milestone 1 (Foundation): DONE** — repo, Supabase, login, roles, audit log, app shell.
+- **Milestone 2 (Hierarchy + Settings): PARTIAL** — Organizations and Sites are built and browsable. The settings/catalog screens (Modules, Hardware, Cost Types, PO Types, Ticket Topics, Term Lengths) are seeded in the database but **not yet built as UI**.
+- **Milestone 3 (Commercials core): DATABASE ONLY** — Contracts/POs/Invoices/Payments tables exist with computed totals, but nothing is surfaced in the app yet. Currently being built onto the Site 360.
+- **Milestones 4–10: NOT STARTED.**
+- **Current working focus:** surfacing the commercials (PO → Invoice → Payment) on the Site 360 page, read-only.
+
+---
+
 ## Who you're working with
 
 The owner, Priyanka, is **non-technical**. This shapes how you work:
