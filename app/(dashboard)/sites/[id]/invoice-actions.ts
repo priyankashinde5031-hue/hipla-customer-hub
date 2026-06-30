@@ -32,6 +32,16 @@ export type PaymentInput = {
   reference: string | null;
 };
 
+export type InvoiceEditInput = {
+  status: string; // one of the manually-settable statuses below
+  issueDate: string | null;
+  dueDate: string | null;
+};
+
+// Statuses a user sets by hand. due / overdue / part-paid / cleared are derived
+// by the invoice_balances view, so they are not offered for manual selection.
+const MANUAL_STATUSES = ["draft", "raised", "cancelled"];
+
 const VALID_STATUSES = [
   "draft",
   "raised",
@@ -193,6 +203,51 @@ export async function createSingleInvoice(
   await writeAudit(supabase, user!.id, inserted.id, { ...row });
 
   revalidateSites(originSiteId, billedSiteId);
+  return { count: 1 };
+}
+
+// Edit an invoice's manual status and its issue/due dates. Amounts are not
+// editable here (they come from the PO split / single-invoice entry).
+export async function updateInvoice(
+  invoiceId: string,
+  originSiteId: string,
+  input: InvoiceEditInput,
+): Promise<ActionResult> {
+  const user = await getCurrentInternalUser();
+  if (!canEditCommercials(user)) {
+    return { error: "You don't have permission to edit invoices." };
+  }
+  if (!MANUAL_STATUSES.includes(input.status)) {
+    return { error: "Pick a valid status (Draft, Raised or Cancelled)." };
+  }
+
+  const supabase = await createClient();
+  const { data: before } = await supabase
+    .from("invoices")
+    .select("*")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (!before) return { error: "Invoice not found." };
+
+  const patch = {
+    status: input.status,
+    issue_date: input.issueDate || null,
+    due_date: input.dueDate || null,
+  };
+
+  const { error } = await supabase.from("invoices").update(patch).eq("id", invoiceId);
+  if (error) return { error: error.message };
+
+  await supabase.from("audit_log").insert({
+    actor_id: user!.id,
+    action: "update",
+    entity_type: "invoice",
+    entity_id: invoiceId,
+    before,
+    after: { ...before, ...patch },
+  });
+
+  revalidatePath(`/sites/${originSiteId}`);
   return { count: 1 };
 }
 

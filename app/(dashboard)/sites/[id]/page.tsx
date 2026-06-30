@@ -6,6 +6,7 @@ import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
+import { EditInvoiceButton } from "./invoice-edit-form";
 import type { PaymentTermSpec } from "@/lib/invoicing";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -206,16 +207,21 @@ export default async function SitePage({
     (sum, po) => sum + (poGrossById.get(po.id) ?? 0),
     0,
   );
-  const totalInvoicedPaise = (invoices || []).reduce(
-    (sum, inv) => sum + inv.total_paise,
-    0,
-  );
+  // Cancelled invoices don't count as invoiced or pending. Pending collection
+  // is Σ balance where status ∈ {due, overdue, part-paid} (spec §6).
+  const totalInvoicedPaise = (invoices || []).reduce((sum, inv) => {
+    const cs = balancesByInvoice.get(inv.id)?.computed_status;
+    return cs === "cancelled" ? sum : sum + inv.total_paise;
+  }, 0);
   const totalCollectedPaise = (invoiceBalances || []).reduce(
     (sum, b) => sum + b.paid_paise,
     0,
   );
   const outstandingPaise = (invoiceBalances || []).reduce(
-    (sum, b) => sum + b.balance_paise,
+    (sum, b) =>
+      ["due", "overdue", "part-paid"].includes(b.computed_status)
+        ? sum + b.balance_paise
+        : sum,
     0,
   );
 
@@ -633,6 +639,16 @@ export default async function SitePage({
                                       siteId={id}
                                     />
                                   )}
+                                {canEdit && (
+                                  <EditInvoiceButton
+                                    invoiceId={inv.id}
+                                    invoiceNumber={inv.invoice_number}
+                                    currentStatus={inv.status}
+                                    issueDate={inv.issue_date}
+                                    dueDate={inv.due_date}
+                                    siteId={id}
+                                  />
+                                )}
                               </div>
                             </div>
 
