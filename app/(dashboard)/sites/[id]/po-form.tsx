@@ -28,9 +28,10 @@ export type ExistingPo = {
   po_type_id: string | null;
   cost_type_id: string | null;
   po_received_date: string | null;
-  financial_year: string | null;
+  financial_year_id: string | null;
   gst_percent: number | null;
-  payment_terms: string | null;
+  payment_terms_id: string | null;
+  contract_time_id: string | null;
   site_ids: string[];
   module_ids: string[];
   line_items: { description: string; qty: number; unit_price_paise: number }[];
@@ -75,6 +76,9 @@ function PoFormDialog({
   siteId,
   poTypeOptions,
   costTypeOptions,
+  financialYearOptions,
+  paymentTermsOptions,
+  contractTimeOptions,
   moduleOptions,
   siteOptions,
   existing,
@@ -85,6 +89,9 @@ function PoFormDialog({
   siteId: string;
   poTypeOptions: Option[];
   costTypeOptions: Option[];
+  financialYearOptions: Option[];
+  paymentTermsOptions: Option[];
+  contractTimeOptions: Option[];
   moduleOptions: Option[];
   siteOptions: Option[];
   existing: ExistingPo | null;
@@ -95,11 +102,12 @@ function PoFormDialog({
   const [poTypeId, setPoTypeId] = useState(existing?.po_type_id ?? "");
   const [costTypeId, setCostTypeId] = useState(existing?.cost_type_id ?? "");
   const [poDate, setPoDate] = useState(existing?.po_received_date ?? "");
-  const [financialYear, setFinancialYear] = useState(existing?.financial_year ?? "");
+  const [financialYearId, setFinancialYearId] = useState(existing?.financial_year_id ?? "");
   const [gstPercent, setGstPercent] = useState(
     existing?.gst_percent != null ? String(existing.gst_percent) : "",
   );
-  const [paymentTerms, setPaymentTerms] = useState(existing?.payment_terms ?? "");
+  const [paymentTermsId, setPaymentTermsId] = useState(existing?.payment_terms_id ?? "");
+  const [contractTimeId, setContractTimeId] = useState(existing?.contract_time_id ?? "");
   const [siteIds, setSiteIds] = useState<string[]>(
     existing ? existing.site_ids : [siteId], // default-cover the site we came from
   );
@@ -140,9 +148,10 @@ function PoFormDialog({
       poTypeId: poTypeId || null,
       costTypeId: costTypeId || null,
       poReceivedDate: poDate || null,
-      financialYear: financialYear || null,
+      financialYearId: financialYearId || null,
       gstPercent: gstPercent.trim() === "" ? null : Number(gstPercent),
-      paymentTerms: paymentTerms || null,
+      paymentTermsId: paymentTermsId || null,
+      contractTimeId: contractTimeId || null,
       siteIds,
       moduleIds,
       lineItems: rows.map((r) => ({
@@ -245,13 +254,55 @@ function PoFormDialog({
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="fy">Financial year</Label>
-              <Input
+              <select
                 id="fy"
-                value={financialYear}
-                onChange={(e) => setFinancialYear(e.target.value)}
-                placeholder="FY2025-26"
-              />
+                value={financialYearId}
+                onChange={(e) => setFinancialYearId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">—</option>
+                {financialYearOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
             </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="terms">Payment terms</Label>
+              <select
+                id="terms"
+                value={paymentTermsId}
+                onChange={(e) => setPaymentTermsId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">—</option>
+                {paymentTermsOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="flex flex-col gap-1.5">
+              <Label htmlFor="contract-time">Contract time</Label>
+              <select
+                id="contract-time"
+                value={contractTimeId}
+                onChange={(e) => setContractTimeId(e.target.value)}
+                className={inputClass}
+              >
+                <option value="">—</option>
+                {contractTimeOptions.map((o) => (
+                  <option key={o.id} value={o.id}>
+                    {o.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-3">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="gst">GST %</Label>
               <Input
@@ -262,15 +313,6 @@ function PoFormDialog({
                 value={gstPercent}
                 onChange={(e) => setGstPercent(e.target.value)}
                 placeholder="18"
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="terms">Payment terms</Label>
-              <Input
-                id="terms"
-                value={paymentTerms}
-                onChange={(e) => setPaymentTerms(e.target.value)}
-                placeholder="Net 30"
               />
             </div>
           </div>
@@ -457,6 +499,9 @@ type SharedProps = {
   siteId: string;
   poTypeOptions: Option[];
   costTypeOptions: Option[];
+  financialYearOptions: Option[];
+  paymentTermsOptions: Option[];
+  contractTimeOptions: Option[];
   moduleOptions: Option[];
   siteOptions: Option[];
 };

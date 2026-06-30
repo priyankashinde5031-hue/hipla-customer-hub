@@ -102,6 +102,33 @@ export const CATALOGS: CatalogConfig[] = [
       { key: "months", label: "Months", type: "number", required: true },
     ],
   },
+  {
+    slug: "financial-years",
+    table: "financial_years",
+    label: "Financial Years",
+    singular: "Financial Year",
+    description: "Financial years selectable on a Purchase Order, e.g. FY2025-26.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
+  {
+    slug: "payment-terms",
+    table: "payment_terms",
+    label: "Payment Terms",
+    singular: "Payment Term",
+    description: "Payment terms selectable on a Purchase Order, e.g. Net 30.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
+  {
+    slug: "contract-times",
+    table: "contract_times",
+    label: "Contract Times",
+    singular: "Contract Time",
+    description: "Contract durations selectable on a Purchase Order, e.g. 1 year.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
 ];
 
 export function getCatalogBySlug(slug: string): CatalogConfig | undefined {

@@ -104,9 +104,13 @@ export default async function SitePage({
     .select(
       `purchase_order:purchase_orders (
          id, po_number, name, po_received_date,
-         po_type_id, cost_type_id, financial_year, gst_percent, payment_terms,
+         po_type_id, cost_type_id, gst_percent,
+         financial_year_id, payment_terms_id, contract_time_id,
          po_type:po_types ( name ),
          cost_type:cost_types ( name ),
+         financial_year:financial_years!financial_year_id ( name ),
+         payment_term:payment_terms!payment_terms_id ( name ),
+         contract_time:contract_times!contract_time_id ( name ),
          po_sites ( site_id ),
          po_modules ( module_id, module:modules ( name ) ),
          po_line_items ( id, description, qty, unit_price_paise, amount_paise )
@@ -223,10 +227,22 @@ export default async function SitePage({
   // Catalogs are read active-only (CLAUDE.md: reference data is data; only
   // active items are selectable).
   const orgId = organization?.id;
-  const [user, poTypesRes, costTypesRes, modulesRes, orgSitesRes] = await Promise.all([
+  const [
+    user,
+    poTypesRes,
+    costTypesRes,
+    financialYearsRes,
+    paymentTermsRes,
+    contractTimesRes,
+    modulesRes,
+    orgSitesRes,
+  ] = await Promise.all([
     getCurrentInternalUser(),
     supabase.from("po_types").select("id, name").eq("active", true).order("name"),
     supabase.from("cost_types").select("id, name").eq("active", true).order("name"),
+    supabase.from("financial_years").select("id, name").eq("active", true).order("name"),
+    supabase.from("payment_terms").select("id, name").eq("active", true).order("name"),
+    supabase.from("contract_times").select("id, name").eq("active", true).order("name"),
     supabase.from("modules").select("id, name").eq("active", true).order("name"),
     orgId
       ? supabase.from("sites").select("id, name").eq("organization_id", orgId).order("name")
@@ -239,6 +255,9 @@ export default async function SitePage({
     siteId: id,
     poTypeOptions: poTypesRes.data ?? [],
     costTypeOptions: costTypesRes.data ?? [],
+    financialYearOptions: financialYearsRes.data ?? [],
+    paymentTermsOptions: paymentTermsRes.data ?? [],
+    contractTimeOptions: contractTimesRes.data ?? [],
     moduleOptions: modulesRes.data ?? [],
     siteOptions: orgSitesRes.data ?? [],
   };
@@ -254,9 +273,10 @@ export default async function SitePage({
         po_type_id: po.po_type_id ?? null,
         cost_type_id: po.cost_type_id ?? null,
         po_received_date: po.po_received_date ?? null,
-        financial_year: po.financial_year ?? null,
+        financial_year_id: po.financial_year_id ?? null,
         gst_percent: po.gst_percent ?? null,
-        payment_terms: po.payment_terms ?? null,
+        payment_terms_id: po.payment_terms_id ?? null,
+        contract_time_id: po.contract_time_id ?? null,
         site_ids: (po.po_sites || []).map((s) => s.site_id),
         module_ids: (po.po_modules || []).map((m) => m.module_id),
         line_items: (po.po_line_items || []).map((li) => ({
@@ -373,6 +393,15 @@ export default async function SitePage({
             const costType = Array.isArray(po.cost_type)
               ? po.cost_type[0]
               : po.cost_type;
+            const financialYear = Array.isArray(po.financial_year)
+              ? po.financial_year[0]
+              : po.financial_year;
+            const paymentTerm = Array.isArray(po.payment_term)
+              ? po.payment_term[0]
+              : po.payment_term;
+            const contractTime = Array.isArray(po.contract_time)
+              ? po.contract_time[0]
+              : po.contract_time;
             const moduleNames = (po.po_modules || [])
               .map((pm) => {
                 const mod = Array.isArray(pm.module) ? pm.module[0] : pm.module;
@@ -408,6 +437,27 @@ export default async function SitePage({
                 </summary>
 
                 <div className="border-t border-slate-100 px-4 py-3">
+                  <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                        Financial year
+                      </dt>
+                      <dd className="text-slate-700">{financialYear?.name || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                        Payment terms
+                      </dt>
+                      <dd className="text-slate-700">{paymentTerm?.name || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                        Contract time
+                      </dt>
+                      <dd className="text-slate-700">{contractTime?.name || "—"}</dd>
+                    </div>
+                  </dl>
+
                   <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
                     Line items
                   </h3>

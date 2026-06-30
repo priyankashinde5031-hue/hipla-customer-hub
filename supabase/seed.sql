@@ -147,6 +147,23 @@ insert into term_lengths (label, months) values
 on conflict (label) do nothing;
 
 -- ---------------------------------------------------------------------
+-- Purchase Order dropdowns (managed in Settings; see migration
+-- 20260630000001). Financial year / Payment terms / Contract time.
+-- ---------------------------------------------------------------------
+insert into financial_years (name) values
+  ('FY2023-24'), ('FY2024-25'), ('FY2025-26'), ('FY2026-27'), ('FY2027-28')
+on conflict (name) do nothing;
+
+insert into payment_terms (name) values
+  ('Advance'), ('On receipt'), ('Net 15'), ('Net 30'), ('Net 45'),
+  ('Net 60'), ('Net 90')
+on conflict (name) do nothing;
+
+insert into contract_times (name) values
+  ('1 year'), ('2 years'), ('3 years'), ('5 years')
+on conflict (name) do nothing;
+
+-- ---------------------------------------------------------------------
 -- Dummy data: 3 Organizations, each with an HQ Site + 1-2 child Sites.
 -- Obviously fake names, per CLAUDE.md's "Data & environments" rule.
 -- Gated on organization legal_name so re-running this script is safe.
@@ -215,6 +232,9 @@ declare
   vms_module_id uuid;
   new_po_type_id uuid;
   software_cost_type_id uuid;
+  fy_2025_id uuid;
+  net30_id uuid;
+  contract_time_1yr_id uuid;
   contract_id uuid;
   po_id uuid;
   line_item_id uuid;
@@ -228,6 +248,9 @@ begin
     select id into vms_module_id from modules where name = 'VMS with host';
     select id into new_po_type_id from po_types where name = 'New PO';
     select id into software_cost_type_id from cost_types where name = 'Software';
+    select id into fy_2025_id from financial_years where name = 'FY2025-26';
+    select id into net30_id from payment_terms where name = 'Net 30';
+    select id into contract_time_1yr_id from contract_times where name = '1 year';
 
     insert into contracts (organization_id, contract_number, go_live_anchor_date, initial_term_id, acv_paise, billing_frequency, payment_terms, status)
     values (acme_org_id, 'CON-ACME-0001', current_date - interval '400 days', term_1yr_id, 50000000, 'Annual', 'Net 30', 'active')
@@ -236,8 +259,8 @@ begin
     insert into contract_sites (contract_id, site_id) values (contract_id, acme_hq_id);
     insert into contract_modules (contract_id, module_id) values (contract_id, vms_module_id);
 
-    insert into purchase_orders (organization_id, contract_id, po_number, customer_po_ref, po_type_id, cost_type_id, financial_year, po_received_date, gst_percent, payment_terms)
-    values (acme_org_id, contract_id, 'PO-ACME-0001', 'ACME/PO/2025/001', new_po_type_id, software_cost_type_id, 'FY2025-26', current_date - interval '395 days', 18.00, 'Net 30')
+    insert into purchase_orders (organization_id, contract_id, po_number, customer_po_ref, po_type_id, cost_type_id, financial_year, financial_year_id, po_received_date, gst_percent, payment_terms, payment_terms_id, contract_time_id)
+    values (acme_org_id, contract_id, 'PO-ACME-0001', 'ACME/PO/2025/001', new_po_type_id, software_cost_type_id, 'FY2025-26', fy_2025_id, current_date - interval '395 days', 18.00, 'Net 30', net30_id, contract_time_1yr_id)
     returning id into po_id;
 
     insert into po_sites (po_id, site_id) values (po_id, acme_hq_id);

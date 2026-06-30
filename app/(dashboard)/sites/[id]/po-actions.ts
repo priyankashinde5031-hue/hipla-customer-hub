@@ -19,9 +19,10 @@ export type PoFormInput = {
   poTypeId: string | null;
   costTypeId: string | null;
   poReceivedDate: string | null; // yyyy-mm-dd
-  financialYear: string | null;
+  financialYearId: string | null;
   gstPercent: number | null;
-  paymentTerms: string | null;
+  paymentTermsId: string | null;
+  contractTimeId: string | null;
   siteIds: string[];
   moduleIds: string[];
   lineItems: PoLineItemInput[];
@@ -85,9 +86,10 @@ function validate(input: PoFormInput): {
     po_type_id: input.poTypeId || null,
     cost_type_id: input.costTypeId || null,
     po_received_date: input.poReceivedDate || null,
-    financial_year: input.financialYear?.trim() || null,
+    financial_year_id: input.financialYearId || null,
     gst_percent: input.gstPercent,
-    payment_terms: input.paymentTerms?.trim() || null,
+    payment_terms_id: input.paymentTermsId || null,
+    contract_time_id: input.contractTimeId || null,
   };
 
   return { po, lineRows };
