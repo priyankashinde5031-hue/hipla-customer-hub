@@ -128,8 +128,20 @@ export default async function SitePage({
     ? await supabase.from("po_totals").select("po_id, po_value_paise").in("po_id", poIds)
     : { data: [] };
 
-  const poTotalsById = new Map(
+  const poNetById = new Map(
     (poTotals || []).map((row) => [row.po_id, row.po_value_paise]),
+  );
+
+  // PO total shown to users = goods (sum of line items) + GST. GST is a
+  // percentage on the PO; the amount is derived here, never stored
+  // (CLAUDE.md: money is computed, never hand-totaled).
+  const poGrossById = new Map<string, number>(
+    purchaseOrders.map((po) => {
+      const net = poNetById.get(po.id) ?? 0;
+      const pct = po.gst_percent ?? 0;
+      const gst = pct > 0 ? Math.round((net * pct) / 100) : 0;
+      return [po.id, net + gst];
+    }),
   );
 
   const { data: invoices } = await supabase
@@ -181,7 +193,7 @@ export default async function SitePage({
 
   // Aggregate cards — every figure derived on read, nothing hand-totaled (CLAUDE.md).
   const totalPoValuePaise = purchaseOrders.reduce(
-    (sum, po) => sum + (poTotalsById.get(po.id) ?? 0),
+    (sum, po) => sum + (poGrossById.get(po.id) ?? 0),
     0,
   );
   const totalInvoicedPaise = (invoices || []).reduce(
@@ -387,7 +399,7 @@ export default async function SitePage({
                   </div>
                   <span className="flex shrink-0 items-center gap-3">
                     <span className="font-medium tabular-nums text-slate-900">
-                      {formatPaise(poTotalsById.get(po.id) ?? 0)}
+                      {formatPaise(poGrossById.get(po.id) ?? 0)}
                     </span>
                     {canEdit && existingPoById.get(po.id) && (
                       <EditPoButton po={existingPoById.get(po.id)!} {...poFormOptions} />
@@ -427,6 +439,32 @@ export default async function SitePage({
                           </tr>
                         ))}
                       </tbody>
+                      <tfoot className="border-t border-slate-200">
+                        <tr>
+                          <td colSpan={3} className="py-1 text-right text-xs uppercase tracking-wide text-slate-500">
+                            Subtotal (goods)
+                          </td>
+                          <td className="py-1 text-right tabular-nums text-slate-600">
+                            {formatPaise(poNetById.get(po.id) ?? 0)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={3} className="py-1 text-right text-xs uppercase tracking-wide text-slate-500">
+                            GST{po.gst_percent ? ` (${po.gst_percent}%)` : ""}
+                          </td>
+                          <td className="py-1 text-right tabular-nums text-slate-600">
+                            {formatPaise((poGrossById.get(po.id) ?? 0) - (poNetById.get(po.id) ?? 0))}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                            PO total
+                          </td>
+                          <td className="py-1 text-right font-semibold tabular-nums text-slate-900">
+                            {formatPaise(poGrossById.get(po.id) ?? 0)}
+                          </td>
+                        </tr>
+                      </tfoot>
                     </table>
                   )}
 
