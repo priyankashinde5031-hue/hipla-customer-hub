@@ -116,6 +116,8 @@ export default async function SitePage({
          id, po_number, name, po_received_date,
          po_type_id, cost_type_id, gst_percent,
          financial_year_id, payment_terms_id, contract_time_id,
+         attachment_id,
+         attachment:attachments!attachment_id ( storage_path, original_filename ),
          po_type:po_types ( name ),
          cost_type:cost_types ( name ),
          financial_year:financial_years!financial_year_id ( name ),
@@ -158,6 +160,22 @@ export default async function SitePage({
       const pct = po.gst_percent ?? 0;
       const gst = pct > 0 ? Math.round((net * pct) / 100) : 0;
       return [po.id, net + gst];
+    }),
+  );
+
+  // Signed URLs for any attached PO documents (private bucket).
+  const poAttachmentById = new Map<string, { filename: string; url: string | null }>();
+  await Promise.all(
+    purchaseOrders.map(async (po) => {
+      const att = Array.isArray(po.attachment) ? po.attachment[0] : po.attachment;
+      if (!att?.storage_path) return;
+      const { data: signed } = await supabase.storage
+        .from("po-attachments")
+        .createSignedUrl(att.storage_path, 60 * 60);
+      poAttachmentById.set(po.id, {
+        filename: att.original_filename,
+        url: signed?.signedUrl ?? null,
+      });
     }),
   );
 
@@ -378,6 +396,7 @@ export default async function SitePage({
           qty: li.qty,
           unit_price_paise: li.unit_price_paise,
         })),
+        attachment: poAttachmentById.get(po.id) ?? null,
       },
     ]),
   );
@@ -587,6 +606,29 @@ export default async function SitePage({
                         Contract time
                       </dt>
                       <dd className="text-slate-700">{contractTime?.name || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                        PO attachment
+                      </dt>
+                      <dd className="text-slate-700">
+                        {(() => {
+                          const att = poAttachmentById.get(po.id);
+                          if (!att) return "—";
+                          return att.url ? (
+                            <a
+                              href={att.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium text-indigo-600 hover:text-indigo-700"
+                            >
+                              {att.filename}
+                            </a>
+                          ) : (
+                            att.filename
+                          );
+                        })()}
+                      </dd>
                     </div>
                   </dl>
 

@@ -259,6 +259,60 @@ async function generateRenewals(
   });
 }
 
+// Upload a PO document and link it on the purchase order. Bytes go to Supabase
+// Storage; the path is recorded in `attachments` (CLAUDE.md: never base64 a
+// file into the DB). Called from the PO form after the PO row exists.
+export async function uploadPoAttachment(formData: FormData): Promise<ActionResult> {
+  const user = await getCurrentInternalUser();
+  if (!canEditCommercials(user)) {
+    return { error: "You don't have permission to upload PO files." };
+  }
+
+  const poId = String(formData.get("poId") || "");
+  const siteId = String(formData.get("siteId") || "");
+  const file = formData.get("file");
+  if (!poId || !siteId) return { error: "Missing purchase order reference." };
+  if (!(file instanceof File) || file.size === 0) return { error: "Choose a file to upload." };
+
+  const supabase = await createClient();
+
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${poId}/${Date.now()}-${safeName}`;
+
+  const { error: uploadErr } = await supabase.storage
+    .from("po-attachments")
+    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (uploadErr) return { error: uploadErr.message };
+
+  const { data: attachment, error: attErr } = await supabase
+    .from("attachments")
+    .insert({
+      storage_path: path,
+      original_filename: file.name,
+      mime_type: file.type || null,
+      uploaded_by: user!.id,
+    })
+    .select("id")
+    .single();
+  if (attErr || !attachment) {
+    return { error: attErr?.message ?? "Could not record the file." };
+  }
+
+  const { error: linkErr } = await supabase
+    .from("purchase_orders")
+    .update({ attachment_id: attachment.id })
+    .eq("id", poId);
+  if (linkErr) return { error: linkErr.message };
+
+  await writeAudit(supabase, user!.id, "update", poId, null, {
+    attachment_id: attachment.id,
+    original_filename: file.name,
+  });
+
+  revalidatePath(`/sites/${siteId}`);
+  return { poId };
+}
+
 async function writeChildren(
   supabase: Awaited<ReturnType<typeof createClient>>,
   poId: string,

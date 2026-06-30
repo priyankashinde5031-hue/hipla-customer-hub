@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState, useTransition } from "react";
+import { useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -16,6 +16,7 @@ import {
 import {
   createPurchaseOrder,
   updatePurchaseOrder,
+  uploadPoAttachment,
   type PoFormInput,
 } from "./po-actions";
 
@@ -35,6 +36,7 @@ export type ExistingPo = {
   site_ids: string[];
   module_ids: string[];
   line_items: { description: string; qty: number; unit_price_paise: number }[];
+  attachment: { filename: string; url: string | null } | null;
 };
 
 type LineRow = { key: string; description: string; qty: string; unitPrice: string };
@@ -115,6 +117,7 @@ function PoFormDialog({
   const [rows, setRows] = useState<LineRow[]>(
     existing ? rowsFromExisting(existing) : [blankRow()],
   );
+  const fileRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
 
   const totalPaise = useMemo(() => {
@@ -170,6 +173,22 @@ function PoFormDialog({
         toast.error(result.error);
         return;
       }
+
+      // Upload the PO file (if one was chosen) now that the PO row exists.
+      const file = fileRef.current?.files?.[0];
+      if (file && result.poId) {
+        const fd = new FormData();
+        fd.set("poId", result.poId);
+        fd.set("siteId", siteId);
+        fd.set("file", file);
+        const up = await uploadPoAttachment(fd);
+        if (up.error) {
+          toast.error(`PO saved, but the file didn't upload: ${up.error}`);
+          onClose();
+          return;
+        }
+      }
+
       toast.success(
         isEdit
           ? "Purchase order updated."
@@ -315,6 +334,40 @@ function PoFormDialog({
                 placeholder="18"
               />
             </div>
+          </div>
+
+          {/* PO attachment */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="po-file">PO attachment</Label>
+            {existing?.attachment && (
+              <p className="text-xs text-slate-500">
+                Current:{" "}
+                {existing.attachment.url ? (
+                  <a
+                    href={existing.attachment.url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-medium text-indigo-600 hover:text-indigo-700"
+                  >
+                    {existing.attachment.filename}
+                  </a>
+                ) : (
+                  <span className="font-medium text-slate-700">
+                    {existing.attachment.filename}
+                  </span>
+                )}
+              </p>
+            )}
+            <input
+              ref={fileRef}
+              id="po-file"
+              type="file"
+              className="text-sm text-slate-600 file:mr-2 file:rounded-md file:border file:border-slate-200 file:bg-slate-50 file:px-2 file:py-1 file:text-xs file:text-slate-700"
+            />
+            <p className="text-xs text-slate-400">
+              Optional — the customer&apos;s PO document (PDF, image, etc.).
+              {existing?.attachment ? " Uploading a new file replaces the current one." : ""}
+            </p>
           </div>
 
           {/* Modules (multi-select) */}
