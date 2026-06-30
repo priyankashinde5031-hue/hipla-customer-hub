@@ -12,6 +12,16 @@ export default function SettingsPage() {
       </p>
 
       <div className="mt-6 grid grid-cols-2 gap-4">
+        <Link
+          href="/settings/payment-terms"
+          className="rounded-lg border border-slate-200 bg-white p-4 hover:border-indigo-300 hover:shadow-sm"
+        >
+          <h2 className="text-sm font-medium text-slate-900">Payment Terms</h2>
+          <p className="mt-1 text-xs text-slate-500">
+            How a PO splits into invoices — by frequency (e.g. quarterly) or by
+            milestones (e.g. 25 / 25 / 50) — plus the days allowed to clear.
+          </p>
+        </Link>
         {CATALOGS.map((catalog) => (
           <Link
             key={catalog.slug}

@@ -111,15 +111,9 @@ export const CATALOGS: CatalogConfig[] = [
     uniqueField: "name",
     fields: [{ key: "name", label: "Name", type: "text", required: true }],
   },
-  {
-    slug: "payment-terms",
-    table: "payment_terms",
-    label: "Payment Terms",
-    singular: "Payment Term",
-    description: "Payment terms selectable on a Purchase Order, e.g. Net 30.",
-    uniqueField: "name",
-    fields: [{ key: "name", label: "Name", type: "text", required: true }],
-  },
+  // NOTE: "Payment Terms" is intentionally NOT a generic catalog — it carries
+  // a split definition (per-year count or milestone %s) and a billing-schedule
+  // day count, so it has its own editor at /settings/payment-terms.
   {
     slug: "contract-times",
     table: "contract_times",
@@ -127,7 +121,10 @@ export const CATALOGS: CatalogConfig[] = [
     singular: "Contract Time",
     description: "Contract durations selectable on a Purchase Order, e.g. 1 year.",
     uniqueField: "name",
-    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+    fields: [
+      { key: "name", label: "Name", type: "text", required: true },
+      { key: "months", label: "Length in months", type: "number", required: true },
+    ],
   },
 ];
 

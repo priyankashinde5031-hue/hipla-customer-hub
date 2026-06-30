@@ -154,13 +154,39 @@ insert into financial_years (name) values
   ('FY2023-24'), ('FY2024-25'), ('FY2025-26'), ('FY2026-27'), ('FY2027-28')
 on conflict (name) do nothing;
 
-insert into payment_terms (name) values
-  ('Advance'), ('On receipt'), ('Net 15'), ('Net 30'), ('Net 45'),
-  ('Net 60'), ('Net 90')
+-- Payment terms define how a PO splits into invoices (see migration
+-- 20260630000002). periodic = N invoices/year; milestone = named % stages.
+insert into payment_terms (name, schedule_type, invoices_per_year, timing, billing_schedule_days) values
+  ('Advance',            'periodic',  1, 'advance',  0),
+  ('On receipt',         'periodic',  1, 'advance',  0),
+  ('Net 15',             'periodic',  1, 'advance', 15),
+  ('Net 30',             'periodic',  1, 'advance', 30),
+  ('Net 45',             'periodic',  1, 'advance', 45),
+  ('Net 60',             'periodic',  1, 'advance', 60),
+  ('Net 90',             'periodic',  1, 'advance', 90),
+  ('Monthly',            'periodic', 12, 'advance',  0),
+  ('Quarterly advance',  'periodic',  4, 'advance',  0),
+  ('Half-yearly advance', 'periodic', 2, 'advance',  0),
+  ('Annual advance',     'periodic',  1, 'advance',  0)
 on conflict (name) do nothing;
 
-insert into contract_times (name) values
-  ('1 year'), ('2 years'), ('3 years'), ('5 years')
+do $$
+declare
+  mt_id uuid;
+begin
+  if not exists (select 1 from payment_terms where name = '25 / 25 / 50 milestones') then
+    insert into payment_terms (name, schedule_type, invoices_per_year, timing, billing_schedule_days)
+    values ('25 / 25 / 50 milestones', 'milestone', null, 'advance', 15)
+    returning id into mt_id;
+    insert into payment_term_installments (payment_term_id, sort_order, label, percent) values
+      (mt_id, 1, 'Advance', 25),
+      (mt_id, 2, 'On material delivery', 25),
+      (mt_id, 3, 'On go-live', 50);
+  end if;
+end $$;
+
+insert into contract_times (name, months) values
+  ('1 year', 12), ('2 years', 24), ('3 years', 36), ('5 years', 60)
 on conflict (name) do nothing;
 
 -- ---------------------------------------------------------------------
