@@ -311,6 +311,47 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- A multi-site sample PO (covers Mumbai HQ + Pune) so the invoice
+-- "Bill to site" picker has something to demonstrate. No invoices —
+-- generate them from the app to exercise the picker.
+-- ---------------------------------------------------------------------
+do $$
+declare
+  acme_org_id uuid;
+  hq_id uuid;
+  pune_id uuid;
+  vms_id uuid;
+  ms_po_id uuid;
+begin
+  if not exists (select 1 from purchase_orders where name = 'Acme multi-site rollout — VMS (sample)') then
+    select id into acme_org_id from organizations where legal_name = 'Acme Corp Pvt Ltd';
+    select id into hq_id from sites where name = 'Acme Corp HQ - Mumbai';
+    select id into pune_id from sites where name = 'Acme Corp - Pune Office';
+    select id into vms_id from modules where name = 'VMS with host';
+
+    insert into purchase_orders (
+      organization_id, name, po_type_id, cost_type_id, financial_year_id,
+      payment_terms_id, contract_time_id, po_received_date, gst_percent
+    )
+    values (
+      acme_org_id, 'Acme multi-site rollout — VMS (sample)',
+      (select id from po_types where name = 'New PO'),
+      (select id from cost_types where name = 'Software'),
+      (select id from financial_years where name = 'FY2025-26'),
+      (select id from payment_terms where name = 'Half-yearly advance'),
+      (select id from contract_times where name = '1 year'),
+      '2026-01-01', 18.00
+    )
+    returning id into ms_po_id;
+
+    insert into po_sites (po_id, site_id) values (ms_po_id, hq_id), (ms_po_id, pune_id);
+    insert into po_modules (po_id, module_id) values (ms_po_id, vms_id);
+    insert into po_line_items (po_id, description, qty, unit_price_paise)
+    values (ms_po_id, 'VMS rollout — Mumbai + Pune (annual)', 1, 40000000);
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- First admin account. Pre-provisioned so Priyanka can log in once auth
 -- is wired up; auth_user_id is linked automatically on first sign-in
 -- (see app/auth/callback/route.ts).
