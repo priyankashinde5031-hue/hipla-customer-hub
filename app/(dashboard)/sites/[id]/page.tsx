@@ -2,6 +2,8 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
+import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 
 const STATUS_STYLES: Record<string, string> = {
   cleared: "bg-emerald-50 text-emerald-700",
@@ -101,10 +103,12 @@ export default async function SitePage({
     .from("po_sites")
     .select(
       `purchase_order:purchase_orders (
-         id, po_number, po_received_date,
+         id, po_number, name, po_received_date,
+         po_type_id, cost_type_id, financial_year, gst_percent, payment_terms,
          po_type:po_types ( name ),
          cost_type:cost_types ( name ),
-         po_modules ( module:modules ( name ) ),
+         po_sites ( site_id ),
+         po_modules ( module_id, module:modules ( name ) ),
          po_line_items ( id, description, qty, unit_price_paise, amount_paise )
        )`,
     )
@@ -203,6 +207,55 @@ export default async function SitePage({
     ? site.cs_owner[0]
     : site.cs_owner;
 
+  // Who can add/edit POs, and the dropdown/multi-select options the form needs.
+  // Catalogs are read active-only (CLAUDE.md: reference data is data; only
+  // active items are selectable).
+  const orgId = organization?.id;
+  const [user, poTypesRes, costTypesRes, modulesRes, orgSitesRes] = await Promise.all([
+    getCurrentInternalUser(),
+    supabase.from("po_types").select("id, name").eq("active", true).order("name"),
+    supabase.from("cost_types").select("id, name").eq("active", true).order("name"),
+    supabase.from("modules").select("id, name").eq("active", true).order("name"),
+    orgId
+      ? supabase.from("sites").select("id, name").eq("organization_id", orgId).order("name")
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+  ]);
+
+  const canEdit = canEditCatalogs(user);
+  const poFormOptions = {
+    organizationId: orgId ?? "",
+    siteId: id,
+    poTypeOptions: poTypesRes.data ?? [],
+    costTypeOptions: costTypesRes.data ?? [],
+    moduleOptions: modulesRes.data ?? [],
+    siteOptions: orgSitesRes.data ?? [],
+  };
+
+  // Reshape each PO into the form's edit payload (ids + rupee-free raw paise).
+  const existingPoById = new Map<string, ExistingPo>(
+    purchaseOrders.map((po) => [
+      po.id,
+      {
+        id: po.id,
+        po_number: po.po_number,
+        name: po.name ?? null,
+        po_type_id: po.po_type_id ?? null,
+        cost_type_id: po.cost_type_id ?? null,
+        po_received_date: po.po_received_date ?? null,
+        financial_year: po.financial_year ?? null,
+        gst_percent: po.gst_percent ?? null,
+        payment_terms: po.payment_terms ?? null,
+        site_ids: (po.po_sites || []).map((s) => s.site_id),
+        module_ids: (po.po_modules || []).map((m) => m.module_id),
+        line_items: (po.po_line_items || []).map((li) => ({
+          description: li.description,
+          qty: li.qty,
+          unit_price_paise: li.unit_price_paise,
+        })),
+      },
+    ]),
+  );
+
   return (
     <div>
       {organization && (
@@ -278,9 +331,12 @@ export default async function SitePage({
         <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
 
-      <h2 className="mt-10 text-sm font-medium uppercase tracking-wide text-slate-500">
-        PO &amp; payments
-      </h2>
+      <div className="mt-10 flex items-center justify-between">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          PO &amp; payments
+        </h2>
+        {canEdit && <AddPoButton {...poFormOptions} />}
+      </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
         <SummaryCard label="Purchase orders" value={String(purchaseOrders.length)} />
@@ -329,8 +385,13 @@ export default async function SitePage({
                       {po.po_received_date || "—"}
                     </span>
                   </div>
-                  <span className="shrink-0 font-medium tabular-nums text-slate-900">
-                    {formatPaise(poTotalsById.get(po.id) ?? 0)}
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span className="font-medium tabular-nums text-slate-900">
+                      {formatPaise(poTotalsById.get(po.id) ?? 0)}
+                    </span>
+                    {canEdit && existingPoById.get(po.id) && (
+                      <EditPoButton po={existingPoById.get(po.id)!} {...poFormOptions} />
+                    )}
                   </span>
                 </summary>
 
