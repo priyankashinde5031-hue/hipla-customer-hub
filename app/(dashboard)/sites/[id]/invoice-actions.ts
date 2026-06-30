@@ -25,6 +25,13 @@ export type SingleInvoiceInput = {
   status: string;
 };
 
+export type PaymentInput = {
+  amountRupees: number;
+  receivedDate: string; // yyyy-mm-dd, required
+  mode: string | null;
+  reference: string | null;
+};
+
 const VALID_STATUSES = [
   "draft",
   "raised",
@@ -43,13 +50,20 @@ function rupeesToPaise(rupees: number): number | null {
 async function getPoContext(
   supabase: Awaited<ReturnType<typeof createClient>>,
   poId: string,
-): Promise<{ contract_id: string | null } | null> {
+): Promise<{ contract_id: string | null; siteIds: string[] } | null> {
   const { data } = await supabase
     .from("purchase_orders")
-    .select("id, contract_id")
+    .select("id, contract_id, po_sites ( site_id )")
     .eq("id", poId)
     .maybeSingle();
-  return data ? { contract_id: data.contract_id ?? null } : null;
+  if (!data) return null;
+  const siteIds = ((data.po_sites as { site_id: string }[] | null) ?? []).map((s) => s.site_id);
+  return { contract_id: data.contract_id ?? null, siteIds };
+}
+
+function revalidateSites(originSiteId: string, billedSiteId: string) {
+  revalidatePath(`/sites/${originSiteId}`);
+  if (billedSiteId !== originSiteId) revalidatePath(`/sites/${billedSiteId}`);
 }
 
 async function writeAudit(
@@ -71,6 +85,7 @@ async function writeAudit(
 // Bulk-create the invoices generated from a PO's payment-term schedule.
 export async function createInvoices(
   poId: string,
+  billedSiteId: string,
   originSiteId: string,
   rows: NewInvoiceRow[],
 ): Promise<ActionResult> {
@@ -92,11 +107,14 @@ export async function createInvoices(
   const supabase = await createClient();
   const ctx = await getPoContext(supabase, poId);
   if (!ctx) return { error: "Purchase order not found." };
+  if (!ctx.siteIds.includes(billedSiteId)) {
+    return { error: "Invoices can only be billed to a site this PO covers." };
+  }
 
   const payload = rows.map((r) => ({
     po_id: poId,
     contract_id: ctx.contract_id,
-    billed_site_id: originSiteId,
+    billed_site_id: billedSiteId,
     amount_paise: r.amountPaise,
     gst_amount_paise: r.gstAmountPaise,
     issue_date: r.issueDate || null,
@@ -114,16 +132,17 @@ export async function createInvoices(
   }
 
   for (const inv of inserted) {
-    await writeAudit(supabase, user!.id, inv.id, { ...inv, po_id: poId, billed_site_id: originSiteId });
+    await writeAudit(supabase, user!.id, inv.id, { ...inv, po_id: poId, billed_site_id: billedSiteId });
   }
 
-  revalidatePath(`/sites/${originSiteId}`);
+  revalidateSites(originSiteId, billedSiteId);
   return { count: inserted.length };
 }
 
 // Create a single, manually-entered invoice against a PO.
 export async function createSingleInvoice(
   poId: string,
+  billedSiteId: string,
   originSiteId: string,
   input: SingleInvoiceInput,
 ): Promise<ActionResult> {
@@ -145,11 +164,14 @@ export async function createSingleInvoice(
   const supabase = await createClient();
   const ctx = await getPoContext(supabase, poId);
   if (!ctx) return { error: "Purchase order not found." };
+  if (!ctx.siteIds.includes(billedSiteId)) {
+    return { error: "Invoices can only be billed to a site this PO covers." };
+  }
 
   const row = {
     po_id: poId,
     contract_id: ctx.contract_id,
-    billed_site_id: originSiteId,
+    billed_site_id: billedSiteId,
     amount_paise: amountPaise,
     gst_number: input.gstNumber?.trim() || null,
     gst_amount_paise: gstPaise,
@@ -169,6 +191,66 @@ export async function createSingleInvoice(
   }
 
   await writeAudit(supabase, user!.id, inserted.id, { ...row });
+
+  revalidateSites(originSiteId, billedSiteId);
+  return { count: 1 };
+}
+
+// Record a payment received against an invoice. The invoice's paid/balance and
+// computed status (cleared / part-paid / overdue) are derived by the
+// invoice_balances view, so nothing is hand-totaled here.
+export async function recordPayment(
+  invoiceId: string,
+  originSiteId: string,
+  input: PaymentInput,
+): Promise<ActionResult> {
+  const user = await getCurrentInternalUser();
+  if (!canEditCommercials(user)) {
+    return { error: "You don't have permission to record payments." };
+  }
+
+  const amountPaise = rupeesToPaise(input.amountRupees);
+  if (amountPaise === null || amountPaise <= 0) {
+    return { error: "Payment amount must be greater than zero." };
+  }
+  if (!input.receivedDate) {
+    return { error: "A received date is required." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: invoice } = await supabase
+    .from("invoices")
+    .select("id")
+    .eq("id", invoiceId)
+    .maybeSingle();
+  if (!invoice) return { error: "Invoice not found." };
+
+  const row = {
+    invoice_id: invoiceId,
+    amount_paise: amountPaise,
+    received_date: input.receivedDate,
+    mode: input.mode?.trim() || null,
+    reference: input.reference?.trim() || null,
+  };
+
+  const { data: inserted, error } = await supabase
+    .from("payments")
+    .insert(row)
+    .select("id")
+    .single();
+  if (error || !inserted) {
+    return { error: error?.message ?? "Could not record the payment." };
+  }
+
+  await supabase.from("audit_log").insert({
+    actor_id: user!.id,
+    action: "create",
+    entity_type: "payment",
+    entity_id: inserted.id,
+    before: null,
+    after: row,
+  });
 
   revalidatePath(`/sites/${originSiteId}`);
   return { count: 1 };

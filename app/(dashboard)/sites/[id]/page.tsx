@@ -5,6 +5,7 @@ import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
+import { RecordPaymentButton } from "./payment-form";
 import type { PaymentTermSpec } from "@/lib/invoicing";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -267,6 +268,12 @@ export default async function SitePage({
     siteOptions: orgSitesRes.data ?? [],
   };
 
+  // Name lookup for the org's sites, used to label a PO's covered sites in the
+  // invoice "bill to" picker.
+  const siteNameById = new Map(
+    (orgSitesRes.data ?? []).map((s) => [s.id, s.name]),
+  );
+
   // Reshape each PO into the form's edit payload (ids + rupee-free raw paise).
   const existingPoById = new Map<string, ExistingPo>(
     purchaseOrders.map((po) => [
@@ -448,6 +455,10 @@ export default async function SitePage({
               poReceivedDate: po.po_received_date ?? null,
               term: termSpec,
               termName: paymentTerm?.name ?? null,
+              coveredSites: (po.po_sites || []).map((s) => ({
+                id: s.site_id,
+                name: siteNameById.get(s.site_id) ?? "Site",
+              })),
             };
 
             return (
@@ -612,6 +623,16 @@ export default async function SitePage({
                                   Balance{" "}
                                   {formatPaise(balance?.balance_paise ?? inv.total_paise)}
                                 </span>
+                                {canEdit &&
+                                  status !== "cleared" &&
+                                  status !== "cancelled" && (
+                                    <RecordPaymentButton
+                                      invoiceId={inv.id}
+                                      invoiceNumber={inv.invoice_number}
+                                      balancePaise={balance?.balance_paise ?? inv.total_paise}
+                                      siteId={id}
+                                    />
+                                  )}
                               </div>
                             </div>
 

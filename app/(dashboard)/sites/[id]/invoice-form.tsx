@@ -48,7 +48,44 @@ export type PoInvoiceContext = {
   poReceivedDate: string | null;
   term: PaymentTermSpec | null;
   termName: string | null;
+  coveredSites: { id: string; name: string }[];
 };
+
+// Default billed site = the site we're viewing if the PO covers it, else the
+// PO's first covered site.
+function defaultBilledSite(ctx: PoInvoiceContext, currentSiteId: string): string {
+  if (ctx.coveredSites.some((s) => s.id === currentSiteId)) return currentSiteId;
+  return ctx.coveredSites[0]?.id ?? currentSiteId;
+}
+
+function BillToField({
+  ctx,
+  value,
+  onChange,
+}: {
+  ctx: PoInvoiceContext;
+  value: string;
+  onChange: (v: string) => void;
+}) {
+  if (ctx.coveredSites.length <= 1) return null;
+  return (
+    <div className="flex flex-col gap-1.5">
+      <Label htmlFor="bill-to">Bill to site</Label>
+      <select
+        id="bill-to"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        className={inputClass}
+      >
+        {ctx.coveredSites.map((s) => (
+          <option key={s.id} value={s.id}>
+            {s.name}
+          </option>
+        ))}
+      </select>
+    </div>
+  );
+}
 
 type PreviewRow = {
   key: string;
@@ -98,6 +135,7 @@ function GenerateDialog({
   const term = ctx.term;
   const isPeriodic = term?.scheduleType === "periodic";
   const [startDate, setStartDate] = useState(ctx.poReceivedDate || todayISO());
+  const [billedSiteId, setBilledSiteId] = useState(() => defaultBilledSite(ctx, siteId));
   const [isPending, startTransition] = useTransition();
 
   // Build the initial rows from the schedule. Regenerated whenever the start
@@ -129,7 +167,7 @@ function GenerateDialog({
       dueDate: r.dueDate || null,
     }));
     startTransition(async () => {
-      const result = await createInvoices(ctx.poId, siteId, payload);
+      const result = await createInvoices(ctx.poId, billedSiteId, siteId, payload);
       if (result.error) {
         toast.error(result.error);
         return;
@@ -158,6 +196,7 @@ function GenerateDialog({
           </p>
         ) : (
           <div className="flex flex-col gap-4">
+            <BillToField ctx={ctx} value={billedSiteId} onChange={setBilledSiteId} />
             {isPeriodic && (
               <div className="flex items-end gap-3">
                 <div className="flex flex-col gap-1.5">
@@ -292,6 +331,7 @@ function SingleInvoiceDialog({
   const [issueDate, setIssueDate] = useState(todayISO());
   const [dueDate, setDueDate] = useState("");
   const [status, setStatus] = useState("raised");
+  const [billedSiteId, setBilledSiteId] = useState(() => defaultBilledSite(ctx, siteId));
   const [isPending, startTransition] = useTransition();
 
   // Convenience: prefill GST from the PO's GST % when the amount changes and
@@ -308,7 +348,7 @@ function SingleInvoiceDialog({
 
   function submit() {
     startTransition(async () => {
-      const result = await createSingleInvoice(ctx.poId, siteId, {
+      const result = await createSingleInvoice(ctx.poId, billedSiteId, siteId, {
         amountRupees: amount.trim() === "" ? 0 : Number(amount),
         gstNumber: gstNumber || null,
         gstAmountRupees: gstAmount.trim() === "" ? 0 : Number(gstAmount),
@@ -338,6 +378,7 @@ function SingleInvoiceDialog({
         </DialogHeader>
 
         <div className="flex flex-col gap-4">
+          <BillToField ctx={ctx} value={billedSiteId} onChange={setBilledSiteId} />
           <div className="grid grid-cols-2 gap-4">
             <div className="flex flex-col gap-1.5">
               <Label htmlFor="inv-amount">
