@@ -120,6 +120,12 @@ function PoFormDialog({
     }, 0);
   }, [rows]);
 
+  const gstAmountPaise = useMemo(() => {
+    const pct = Number(gstPercent);
+    if (!Number.isFinite(pct) || pct <= 0) return 0;
+    return Math.round((totalPaise * pct) / 100);
+  }, [totalPaise, gstPercent]);
+
   function toggle(list: string[], setList: (v: string[]) => void, id: string) {
     setList(list.includes(id) ? list.filter((x) => x !== id) : [...list, id]);
   }
@@ -394,13 +400,31 @@ function PoFormDialog({
                     );
                   })}
                 </tbody>
-                <tfoot>
-                  <tr className="border-t border-slate-200 bg-slate-50">
-                    <td colSpan={3} className="px-2 py-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                <tfoot className="border-t border-slate-200 bg-slate-50">
+                  <tr>
+                    <td colSpan={3} className="px-2 pt-2 text-right text-xs uppercase tracking-wide text-slate-500">
+                      Subtotal (goods)
+                    </td>
+                    <td className="px-2 pt-2 text-right tabular-nums text-slate-600">
+                      {formatRupees(totalPaise)}
+                    </td>
+                    <td />
+                  </tr>
+                  <tr>
+                    <td colSpan={3} className="px-2 text-right text-xs uppercase tracking-wide text-slate-500">
+                      GST{gstAmountPaise > 0 || gstPercent.trim() ? ` (${gstPercent || "0"}%)` : ""}
+                    </td>
+                    <td className="px-2 text-right tabular-nums text-slate-600">
+                      {formatRupees(gstAmountPaise)}
+                    </td>
+                    <td />
+                  </tr>
+                  <tr>
+                    <td colSpan={3} className="px-2 pb-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
                       PO total (computed)
                     </td>
-                    <td className="px-2 py-2 text-right font-semibold tabular-nums text-slate-900">
-                      {formatRupees(totalPaise)}
+                    <td className="px-2 pb-2 text-right font-semibold tabular-nums text-slate-900">
+                      {formatRupees(totalPaise + gstAmountPaise)}
                     </td>
                     <td />
                   </tr>
