@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { generateRenewalSchedule } from "@/lib/renewals";
 
 // canEditCatalogs already encodes "admin or manager", the same rule the spec
 // uses for commercial edits — reuse it rather than inventing a parallel check.
@@ -125,6 +126,18 @@ export async function createPurchaseOrder(
   const childError = await writeChildren(supabase, poId, input.siteIds, input.moduleIds, lineRows!);
   if (childError) return { error: childError };
 
+  // Auto-generate the Year 2–5 renewal projections. The user never creates
+  // these by hand — they exist as soon as the PO does (spec §5.4).
+  await generateRenewals(
+    supabase,
+    user!.id,
+    poId,
+    organizationId,
+    originSiteId,
+    input.contractTimeId,
+    lineRows!,
+  );
+
   await writeAudit(supabase, user!.id, "create", poId, null, {
     ...po,
     organization_id: organizationId,
@@ -180,6 +193,70 @@ export async function updatePurchaseOrder(
 
   revalidatePath(`/sites/${originSiteId}`);
   return { poId };
+}
+
+// Generate the renewal series for a freshly-created PO. Cadence is driven by
+// the PO's Contract time (months), defaulting to a yearly term when unset, and
+// capped at a 5-year horizon. Expected value is snapshotted from the Year-1 PO
+// value (ex-GST = sum of line items) and stays editable on each card.
+async function generateRenewals(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  actorId: string,
+  poId: string,
+  organizationId: string,
+  anchorSiteId: string,
+  contractTimeId: string | null,
+  lineRows: { description: string; qty: number; unit_price_paise: number }[],
+): Promise<void> {
+  let initialTermMonths = 12;
+  if (contractTimeId) {
+    const { data: ct } = await supabase
+      .from("contract_times")
+      .select("months")
+      .eq("id", contractTimeId)
+      .maybeSingle();
+    if (ct?.months) initialTermMonths = ct.months;
+  }
+
+  const cycles = generateRenewalSchedule(initialTermMonths);
+  if (cycles.length === 0) return; // e.g. a 5-year initial term has no renewals in-horizon
+
+  const expectedValuePaise = lineRows.reduce(
+    (sum, r) => sum + Math.round(r.qty * r.unit_price_paise),
+    0,
+  );
+
+  const rows = cycles.map((c) => ({
+    po_id: poId,
+    organization_id: organizationId,
+    anchor_site_id: anchorSiteId,
+    year_number: c.yearNumber,
+    offset_months: c.offsetMonths,
+    term_months: c.termMonths,
+    expected_value_paise: expectedValuePaise,
+  }));
+
+  const { error } = await supabase.from("renewals").insert(rows);
+  if (error) {
+    // Don't fail PO creation if renewal generation hiccups — log via audit so
+    // it's visible, and the renewals can be regenerated later.
+    await supabase.from("audit_log").insert({
+      actor_id: actorId,
+      action: "error",
+      entity_type: "renewal",
+      entity_id: poId,
+      after: { message: error.message },
+    });
+    return;
+  }
+
+  await supabase.from("audit_log").insert({
+    actor_id: actorId,
+    action: "create",
+    entity_type: "renewal",
+    entity_id: poId,
+    after: { generated_years: cycles.map((c) => c.yearNumber), expectedValuePaise },
+  });
 }
 
 async function writeChildren(

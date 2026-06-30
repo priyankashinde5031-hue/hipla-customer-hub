@@ -7,7 +7,9 @@ import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
+import { RenewalsSection, type RenewalCardData } from "./renewals-section";
 import type { PaymentTermSpec } from "@/lib/invoicing";
+import { renewalDate } from "@/lib/renewals";
 
 const STATUS_STYLES: Record<string, string> = {
   cleared: "bg-emerald-50 text-emerald-700",
@@ -278,6 +280,47 @@ export default async function SitePage({
   // invoice "bill to" picker.
   const siteNameById = new Map(
     (orgSitesRes.data ?? []).map((s) => [s.id, s.name]),
+  );
+
+  // Renewals (Year 2–5 projections) anchored to this site. Dates are computed
+  // on read from the site's go-live date, so they appear/update automatically
+  // once Implementation stamps it (CLAUDE.md: money/dates computed, not stored).
+  const { data: renewalRows } = await supabase
+    .from("renewals")
+    .select(
+      `id, year_number, offset_months, term_months,
+       expected_value_paise, renewal_value_paise, renewal_received_date,
+       payment_terms, status,
+       attachment:attachments!attachment_id ( storage_path, original_filename )`,
+    )
+    .eq("anchor_site_id", id)
+    .order("year_number");
+
+  const renewals: RenewalCardData[] = await Promise.all(
+    (renewalRows ?? []).map(async (r) => {
+      const attachment = Array.isArray(r.attachment) ? r.attachment[0] : r.attachment;
+      let attached: RenewalCardData["attachment"] = null;
+      if (attachment?.storage_path) {
+        const { data: signed } = await supabase.storage
+          .from("renewal-attachments")
+          .createSignedUrl(attachment.storage_path, 60 * 60);
+        attached = {
+          filename: attachment.original_filename,
+          url: signed?.signedUrl ?? null,
+        };
+      }
+      return {
+        id: r.id,
+        yearNumber: r.year_number,
+        renewalDate: renewalDate(site.go_live_date, r.offset_months),
+        expectedValuePaise: r.expected_value_paise,
+        renewalValuePaise: r.renewal_value_paise,
+        renewalReceivedDate: r.renewal_received_date,
+        paymentTerms: r.payment_terms,
+        status: r.status === "renewed" ? "renewed" : "upcoming",
+        attachment: attached,
+      };
+    }),
   );
 
   // Reshape each PO into the form's edit payload (ids + rupee-free raw paise).
@@ -689,6 +732,13 @@ export default async function SitePage({
           })}
         </div>
       )}
+
+      <RenewalsSection
+        renewals={renewals}
+        siteId={id}
+        canEdit={canEdit}
+        goLiveSet={Boolean(site.go_live_date)}
+      />
     </div>
   );
 }

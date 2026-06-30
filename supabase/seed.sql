@@ -348,6 +348,16 @@ begin
     insert into po_modules (po_id, module_id) values (ms_po_id, vms_id);
     insert into po_line_items (po_id, description, qty, unit_price_paise)
     values (ms_po_id, 'VMS rollout — Mumbai + Pune (annual)', 1, 40000000);
+
+    -- Year 2–5 renewal projections for the sample PO. In the app these are
+    -- auto-generated on PO creation; seeded here so the section demos with data.
+    -- 1-year term, anchored to HQ → Year 2,3,4,5. Expected = the Year-1 PO value.
+    insert into renewals (po_id, organization_id, anchor_site_id, year_number, offset_months, term_months, expected_value_paise)
+    values
+      (ms_po_id, acme_org_id, hq_id, 2, 12, 12, 40000000),
+      (ms_po_id, acme_org_id, hq_id, 3, 24, 12, 40000000),
+      (ms_po_id, acme_org_id, hq_id, 4, 36, 12, 40000000),
+      (ms_po_id, acme_org_id, hq_id, 5, 48, 12, 40000000);
   end if;
 end $$;
 
