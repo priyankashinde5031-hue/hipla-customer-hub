@@ -4,6 +4,8 @@ import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
+import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
+import type { PaymentTermSpec } from "@/lib/invoicing";
 
 const STATUS_STYLES: Record<string, string> = {
   cleared: "bg-emerald-50 text-emerald-700",
@@ -109,8 +111,11 @@ export default async function SitePage({
          po_type:po_types ( name ),
          cost_type:cost_types ( name ),
          financial_year:financial_years!financial_year_id ( name ),
-         payment_term:payment_terms!payment_terms_id ( name ),
-         contract_time:contract_times!contract_time_id ( name ),
+         payment_term:payment_terms!payment_terms_id (
+           name, schedule_type, invoices_per_year, timing, billing_schedule_days,
+           installments:payment_term_installments ( label, percent, sort_order )
+         ),
+         contract_time:contract_times!contract_time_id ( name, months ),
          po_sites ( site_id ),
          po_modules ( module_id, module:modules ( name ) ),
          po_line_items ( id, description, qty, unit_price_paise, amount_paise )
@@ -411,6 +416,40 @@ export default async function SitePage({
               .join(", ");
             const poInvoices = invoicesByPo.get(po.id) || [];
 
+            // Everything the invoice generator needs: the PO's payment-term
+            // schedule (so it can split), its ex-tax value, GST %, and the
+            // contract length in months (from Contract time).
+            const termSpec: PaymentTermSpec | null = paymentTerm
+              ? {
+                  scheduleType:
+                    paymentTerm.schedule_type === "milestone" ? "milestone" : "periodic",
+                  invoicesPerYear: paymentTerm.invoices_per_year ?? null,
+                  timing: paymentTerm.timing === "arrears" ? "arrears" : "advance",
+                  billingScheduleDays: paymentTerm.billing_schedule_days ?? null,
+                  installments: (
+                    (paymentTerm.installments || []) as {
+                      label: string;
+                      percent: number | string;
+                      sort_order: number;
+                    }[]
+                  )
+                    .slice()
+                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .map((i) => ({ label: i.label, percent: Number(i.percent) })),
+                }
+              : null;
+            const invoiceCtx: PoInvoiceContext = {
+              poId: po.id,
+              poNumber: po.po_number,
+              poName: po.name ?? null,
+              netPaise: poNetById.get(po.id) ?? 0,
+              gstPercent: po.gst_percent ?? null,
+              contractMonths: contractTime?.months ?? 12,
+              poReceivedDate: po.po_received_date ?? null,
+              term: termSpec,
+              termName: paymentTerm?.name ?? null,
+            };
+
             return (
               <details
                 key={po.id}
@@ -518,9 +557,16 @@ export default async function SitePage({
                     </table>
                   )}
 
-                  <h3 className="mt-4 text-xs font-medium uppercase tracking-wide text-slate-500">
-                    Invoices
-                  </h3>
+                  <div className="mt-4 flex items-center justify-between">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Invoices
+                    </h3>
+                    {canEdit && (
+                      <span className="flex items-center gap-3">
+                        <InvoiceActionsForPo ctx={invoiceCtx} siteId={id} />
+                      </span>
+                    )}
+                  </div>
                   {poInvoices.length === 0 ? (
                     <p className="mt-2 text-sm text-slate-400">
                       No invoices raised against this PO for this site yet.
