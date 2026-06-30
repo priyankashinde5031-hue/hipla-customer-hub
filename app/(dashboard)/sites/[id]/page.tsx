@@ -7,7 +7,11 @@ import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
-import { RenewalsSection, type RenewalCardData } from "./renewals-section";
+import {
+  RenewalsForPo,
+  type RenewalCardData,
+  type PaymentTermOption,
+} from "./renewals-section";
 import type { PaymentTermSpec } from "@/lib/invoicing";
 import { renewalDate } from "@/lib/renewals";
 
@@ -255,7 +259,11 @@ export default async function SitePage({
     supabase.from("po_types").select("id, name").eq("active", true).order("name"),
     supabase.from("cost_types").select("id, name").eq("active", true).order("name"),
     supabase.from("financial_years").select("id, name").eq("active", true).order("name"),
-    supabase.from("payment_terms").select("id, name").eq("active", true).order("name"),
+    supabase
+      .from("payment_terms")
+      .select("id, name, schedule_type, invoices_per_year, timing, billing_schedule_days")
+      .eq("active", true)
+      .order("name"),
     supabase.from("contract_times").select("id, name").eq("active", true).order("name"),
     supabase.from("modules").select("id, name").eq("active", true).order("name"),
     orgId
@@ -264,13 +272,27 @@ export default async function SitePage({
   ]);
 
   const canEdit = canEditCatalogs(user);
+
+  // Full payment-term rows (with their billing schedule) for the renewal
+  // dropdown; the PO form only needs id + name.
+  const renewalPaymentTermsOptions: PaymentTermOption[] = (paymentTermsRes.data ?? []).map(
+    (t) => ({
+      id: t.id,
+      name: t.name,
+      schedule_type: t.schedule_type === "milestone" ? "milestone" : "periodic",
+      invoices_per_year: t.invoices_per_year ?? null,
+      timing: t.timing === "arrears" ? "arrears" : "advance",
+      billing_schedule_days: t.billing_schedule_days ?? null,
+    }),
+  );
+
   const poFormOptions = {
     organizationId: orgId ?? "",
     siteId: id,
     poTypeOptions: poTypesRes.data ?? [],
     costTypeOptions: costTypesRes.data ?? [],
     financialYearOptions: financialYearsRes.data ?? [],
-    paymentTermsOptions: paymentTermsRes.data ?? [],
+    paymentTermsOptions: (paymentTermsRes.data ?? []).map((t) => ({ id: t.id, name: t.name })),
     contractTimeOptions: contractTimesRes.data ?? [],
     moduleOptions: modulesRes.data ?? [],
     siteOptions: orgSitesRes.data ?? [],
@@ -282,21 +304,25 @@ export default async function SitePage({
     (orgSitesRes.data ?? []).map((s) => [s.id, s.name]),
   );
 
-  // Renewals (Year 2–5 projections) anchored to this site. Dates are computed
-  // on read from the site's go-live date, so they appear/update automatically
-  // once Implementation stamps it (CLAUDE.md: money/dates computed, not stored).
-  const { data: renewalRows } = await supabase
-    .from("renewals")
-    .select(
-      `id, year_number, offset_months, term_months,
-       expected_value_paise, renewal_value_paise, renewal_received_date,
-       payment_terms, status,
-       attachment:attachments!attachment_id ( storage_path, original_filename )`,
-    )
-    .eq("anchor_site_id", id)
-    .order("year_number");
+  // Renewals (Year 2–5 projections) for this site's POs, grouped per PO so each
+  // PO card shows its own renewals. Dates are computed on read from the site's
+  // go-live date, so they appear/update automatically once Implementation
+  // stamps it (CLAUDE.md: money/dates computed, not stored).
+  const { data: renewalRows } = poIds.length
+    ? await supabase
+        .from("renewals")
+        .select(
+          `id, po_id, year_number, offset_months, term_months,
+           expected_value_paise, renewal_value_paise, renewal_received_date,
+           payment_terms_id, status,
+           attachment:attachments!attachment_id ( storage_path, original_filename )`,
+        )
+        .in("po_id", poIds)
+        .order("year_number")
+    : { data: [] };
 
-  const renewals: RenewalCardData[] = await Promise.all(
+  const renewalsByPo = new Map<string, RenewalCardData[]>();
+  await Promise.all(
     (renewalRows ?? []).map(async (r) => {
       const attachment = Array.isArray(r.attachment) ? r.attachment[0] : r.attachment;
       let attached: RenewalCardData["attachment"] = null;
@@ -309,19 +335,26 @@ export default async function SitePage({
           url: signed?.signedUrl ?? null,
         };
       }
-      return {
+      const card: RenewalCardData = {
         id: r.id,
         yearNumber: r.year_number,
         renewalDate: renewalDate(site.go_live_date, r.offset_months),
         expectedValuePaise: r.expected_value_paise,
         renewalValuePaise: r.renewal_value_paise,
         renewalReceivedDate: r.renewal_received_date,
-        paymentTerms: r.payment_terms,
+        paymentTermsId: r.payment_terms_id,
         status: r.status === "renewed" ? "renewed" : "upcoming",
         attachment: attached,
       };
+      const list = renewalsByPo.get(r.po_id) || [];
+      list.push(card);
+      renewalsByPo.set(r.po_id, list);
     }),
   );
+  // Keep each PO's cards ordered by year (Promise.all resolves out of order).
+  for (const list of renewalsByPo.values()) {
+    list.sort((a, b) => a.yearNumber - b.yearNumber);
+  }
 
   // Reshape each PO into the form's edit payload (ids + rupee-free raw paise).
   const existingPoById = new Map<string, ExistingPo>(
@@ -726,19 +759,20 @@ export default async function SitePage({
                       })}
                     </div>
                   )}
+
+                  <RenewalsForPo
+                    renewals={renewalsByPo.get(po.id) ?? []}
+                    siteId={id}
+                    canEdit={canEdit}
+                    goLiveSet={Boolean(site.go_live_date)}
+                    paymentTermsOptions={renewalPaymentTermsOptions}
+                  />
                 </div>
               </details>
             );
           })}
         </div>
       )}
-
-      <RenewalsSection
-        renewals={renewals}
-        siteId={id}
-        canEdit={canEdit}
-        goLiveSet={Boolean(site.go_live_date)}
-      />
     </div>
   );
 }

@@ -13,6 +13,17 @@ import {
   uploadRenewalAttachment,
 } from "./renewal-actions";
 
+// Payment-term option from the Settings catalog. The schedule fields ride along
+// so we can show the linked billing schedule (read-only) once a term is picked.
+export type PaymentTermOption = {
+  id: string;
+  name: string;
+  schedule_type: "periodic" | "milestone";
+  invoices_per_year: number | null;
+  timing: "advance" | "arrears";
+  billing_schedule_days: number | null;
+};
+
 export type RenewalCardData = {
   id: string;
   yearNumber: number;
@@ -20,31 +31,61 @@ export type RenewalCardData = {
   expectedValuePaise: number | null;
   renewalValuePaise: number | null;
   renewalReceivedDate: string | null;
-  paymentTerms: string | null;
+  paymentTermsId: string | null;
   status: "upcoming" | "renewed";
   attachment: { filename: string; url: string | null } | null;
 };
 
 const inputClass =
-  "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60";
 
 function paiseToInput(paise: number | null): string {
   return paise === null || paise === undefined ? "" : String(paise / 100);
+}
+
+const FREQ_LABEL: Record<number, string> = {
+  1: "Annual",
+  2: "Half-yearly",
+  4: "Quarterly",
+  12: "Monthly",
+};
+
+// Plain-English billing schedule from the selected payment term (settings-linked).
+function describeSchedule(term: PaymentTermOption | undefined): string {
+  if (!term) return "—";
+  const days = term.billing_schedule_days;
+  const due =
+    days === null || days === undefined
+      ? ""
+      : days === 0
+        ? ", due on receipt"
+        : `, due in ${days} day${days === 1 ? "" : "s"}`;
+  if (term.schedule_type === "milestone") {
+    return `Milestone-based${due}`;
+  }
+  const freq =
+    term.invoices_per_year != null
+      ? FREQ_LABEL[term.invoices_per_year] ?? `${term.invoices_per_year}×/year`
+      : "Periodic";
+  const timing = term.timing === "arrears" ? "in arrears" : "in advance";
+  return `${freq}, ${timing}${due}`;
 }
 
 function RenewalCard({
   renewal,
   siteId,
   canEdit,
+  paymentTermsOptions,
 }: {
   renewal: RenewalCardData;
   siteId: string;
   canEdit: boolean;
+  paymentTermsOptions: PaymentTermOption[];
 }) {
   const [expected, setExpected] = useState(paiseToInput(renewal.expectedValuePaise));
   const [value, setValue] = useState(paiseToInput(renewal.renewalValuePaise));
   const [received, setReceived] = useState(renewal.renewalReceivedDate ?? "");
-  const [terms, setTerms] = useState(renewal.paymentTerms ?? "");
+  const [termId, setTermId] = useState(renewal.paymentTermsId ?? "");
   const [isSaving, startSave] = useTransition();
   const [isUploading, startUpload] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -66,17 +107,23 @@ function RenewalCard({
         ? "text-emerald-700"
         : "text-red-600";
 
+  const selectedTerm = paymentTermsOptions.find((t) => t.id === termId);
+
   // Mark-as-done gate: both renewal value and received date present.
   const canMarkDone = value.trim() !== "" && received.trim() !== "";
 
+  function fieldInput() {
+    return {
+      expectedValueRupees: expected.trim() === "" ? null : Number(expected),
+      renewalValueRupees: value.trim() === "" ? null : Number(value),
+      renewalReceivedDate: received || null,
+      paymentTermsId: termId || null,
+    };
+  }
+
   function save() {
     startSave(async () => {
-      const result = await updateRenewal(renewal.id, siteId, {
-        expectedValueRupees: expected.trim() === "" ? null : Number(expected),
-        renewalValueRupees: value.trim() === "" ? null : Number(value),
-        renewalReceivedDate: received || null,
-        paymentTerms: terms || null,
-      });
+      const result = await updateRenewal(renewal.id, siteId, fieldInput());
       if (result.error) {
         toast.error(result.error);
         return;
@@ -88,12 +135,7 @@ function RenewalCard({
   function markDone() {
     startSave(async () => {
       // Persist any unsaved edits first, then flip the status.
-      const saved = await updateRenewal(renewal.id, siteId, {
-        expectedValueRupees: expected.trim() === "" ? null : Number(expected),
-        renewalValueRupees: value.trim() === "" ? null : Number(value),
-        renewalReceivedDate: received || null,
-        paymentTerms: terms || null,
-      });
+      const saved = await updateRenewal(renewal.id, siteId, fieldInput());
       if (saved.error) {
         toast.error(saved.error);
         return;
@@ -129,8 +171,8 @@ function RenewalCard({
   }
 
   return (
-    <details className="group overflow-hidden rounded-lg border border-slate-200 bg-white">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3">
+    <details className="group overflow-hidden rounded-md border border-slate-200 bg-white">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-3 py-2.5">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="font-medium text-slate-900">Year {renewal.yearNumber}</span>
           <span className="text-sm text-slate-500">
@@ -153,7 +195,7 @@ function RenewalCard({
         </span>
       </summary>
 
-      <div className="border-t border-slate-100 px-4 py-4">
+      <div className="border-t border-slate-100 px-3 py-3">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {/* Renewal date — read-only, computed */}
           <div className="flex flex-col gap-1.5">
@@ -218,16 +260,31 @@ function RenewalCard({
             />
           </div>
 
-          {/* Payment terms */}
+          {/* Payment terms — from the Settings catalog (carries the billing schedule) */}
           <div className="flex flex-col gap-1.5">
             <Label htmlFor={`terms-${renewal.id}`}>Payment terms</Label>
-            <Input
+            <select
               id={`terms-${renewal.id}`}
-              value={terms}
-              onChange={(e) => setTerms(e.target.value)}
+              value={termId}
+              onChange={(e) => setTermId(e.target.value)}
               disabled={!canEdit || isDone}
-              placeholder="e.g., Net 30, 50% advance"
-            />
+              className={inputClass}
+            >
+              <option value="">—</option>
+              {paymentTermsOptions.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* Billing schedule — read-only, derived from the selected term */}
+          <div className="flex flex-col gap-1.5">
+            <Label>Billing schedule</Label>
+            <p className="flex h-8 items-center text-sm text-slate-700">
+              {describeSchedule(selectedTerm)}
+            </p>
           </div>
         </div>
 
@@ -305,39 +362,48 @@ function RenewalCard({
   );
 }
 
-export function RenewalsSection({
+// Renewals for a single PO — rendered inside that PO's expanded card.
+export function RenewalsForPo({
   renewals,
   siteId,
   canEdit,
   goLiveSet,
+  paymentTermsOptions,
 }: {
   renewals: RenewalCardData[];
   siteId: string;
   canEdit: boolean;
   goLiveSet: boolean;
+  paymentTermsOptions: PaymentTermOption[];
 }) {
   return (
-    <div className="mt-10">
-      <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+    <div className="mt-4">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
         Renewals (Year 2–5 projections)
-      </h2>
+      </h3>
 
-      {!goLiveSet && (
-        <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+      {!goLiveSet && renewals.length > 0 && (
+        <p className="mt-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">
           Set the Go Live Date in Implementation (Stage 4) to auto-calculate
           renewal dates for Year 2–5.
         </p>
       )}
 
       {renewals.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-400">
-          No renewals yet — they are generated automatically when a purchase
-          order is created for this site.
+        <p className="mt-2 text-sm text-slate-400">
+          No renewals for this PO. They are generated automatically when a
+          purchase order is created.
         </p>
       ) : (
-        <div className="mt-3 space-y-3">
+        <div className="mt-2 space-y-2">
           {renewals.map((r) => (
-            <RenewalCard key={r.id} renewal={r} siteId={siteId} canEdit={canEdit} />
+            <RenewalCard
+              key={r.id}
+              renewal={r}
+              siteId={siteId}
+              canEdit={canEdit}
+              paymentTermsOptions={paymentTermsOptions}
+            />
           ))}
         </div>
       )}

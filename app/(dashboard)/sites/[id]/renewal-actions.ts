@@ -13,7 +13,7 @@ export type RenewalFieldInput = {
   expectedValueRupees: number | null; // editable projection baseline, in ₹
   renewalValueRupees: number | null; // actual, in ₹
   renewalReceivedDate: string | null; // yyyy-mm-dd
-  paymentTerms: string | null;
+  paymentTermsId: string | null; // FK to the Settings payment_terms catalog
 };
 
 type ActionResult = { error?: string };
@@ -78,7 +78,7 @@ export async function updateRenewal(
     expected_value_paise: expectedPaise,
     renewal_value_paise: valuePaise,
     renewal_received_date: input.renewalReceivedDate || null,
-    payment_terms: input.paymentTerms?.trim() || null,
+    payment_terms_id: input.paymentTermsId || null,
     updated_at: new Date().toISOString(),
   };
 
