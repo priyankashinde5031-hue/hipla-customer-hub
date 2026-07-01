@@ -2,6 +2,18 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
+import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
+import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
+import { RecordPaymentButton } from "./payment-form";
+import { EditInvoiceButton } from "./invoice-edit-form";
+import {
+  RenewalsForPo,
+  type RenewalCardData,
+  type PaymentTermOption,
+} from "./renewals-section";
+import type { PaymentTermSpec } from "@/lib/invoicing";
+import { renewalDate } from "@/lib/renewals";
 
 const STATUS_STYLES: Record<string, string> = {
   cleared: "bg-emerald-50 text-emerald-700",
@@ -22,6 +34,29 @@ function StatusBadge({ status }: { status: string }) {
     >
       {status}
     </span>
+  );
+}
+
+function SummaryCard({
+  label,
+  value,
+  tone = "default",
+}: {
+  label: string;
+  value: string;
+  tone?: "default" | "amber";
+}) {
+  return (
+    <div className="rounded-lg border border-slate-200 bg-white p-3">
+      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+      <p
+        className={`mt-1 text-lg font-semibold tabular-nums ${
+          tone === "amber" ? "text-amber-700" : "text-slate-900"
+        }`}
+      >
+        {value}
+      </p>
+    </div>
   );
 }
 
@@ -78,8 +113,22 @@ export default async function SitePage({
     .from("po_sites")
     .select(
       `purchase_order:purchase_orders (
-         id, po_number, po_received_date,
-         po_type:po_types ( name )
+         id, po_number, name, po_received_date,
+         po_type_id, cost_type_id, gst_percent,
+         financial_year_id, payment_terms_id, contract_time_id,
+         attachment_id,
+         attachment:attachments!attachment_id ( storage_path, original_filename ),
+         po_type:po_types ( name ),
+         cost_type:cost_types ( name ),
+         financial_year:financial_years!financial_year_id ( name ),
+         payment_term:payment_terms!payment_terms_id (
+           name, schedule_type, invoices_per_year, timing, billing_schedule_days,
+           installments:payment_term_installments ( label, percent, sort_order )
+         ),
+         contract_time:contract_times!contract_time_id ( name, months ),
+         po_sites ( site_id ),
+         po_modules ( module_id, module:modules ( name ) ),
+         po_line_items ( id, description, qty, unit_price_paise, amount_paise )
        )`,
     )
     .eq("site_id", id);
@@ -98,14 +147,42 @@ export default async function SitePage({
     ? await supabase.from("po_totals").select("po_id, po_value_paise").in("po_id", poIds)
     : { data: [] };
 
-  const poTotalsById = new Map(
+  const poNetById = new Map(
     (poTotals || []).map((row) => [row.po_id, row.po_value_paise]),
+  );
+
+  // PO total shown to users = goods (sum of line items) + GST. GST is a
+  // percentage on the PO; the amount is derived here, never stored
+  // (CLAUDE.md: money is computed, never hand-totaled).
+  const poGrossById = new Map<string, number>(
+    purchaseOrders.map((po) => {
+      const net = poNetById.get(po.id) ?? 0;
+      const pct = po.gst_percent ?? 0;
+      const gst = pct > 0 ? Math.round((net * pct) / 100) : 0;
+      return [po.id, net + gst];
+    }),
+  );
+
+  // Signed URLs for any attached PO documents (private bucket).
+  const poAttachmentById = new Map<string, { filename: string; url: string | null }>();
+  await Promise.all(
+    purchaseOrders.map(async (po) => {
+      const att = Array.isArray(po.attachment) ? po.attachment[0] : po.attachment;
+      if (!att?.storage_path) return;
+      const { data: signed } = await supabase.storage
+        .from("po-attachments")
+        .createSignedUrl(att.storage_path, 60 * 60);
+      poAttachmentById.set(po.id, {
+        filename: att.original_filename,
+        url: signed?.signedUrl ?? null,
+      });
+    }),
   );
 
   const { data: invoices } = await supabase
     .from("invoices")
     .select(
-      `id, invoice_number, amount_paise, gst_amount_paise, total_paise,
+      `id, po_id, invoice_number, amount_paise, gst_amount_paise, total_paise,
        issue_date, due_date, status,
        purchase_order:purchase_orders ( po_number )`,
     )
@@ -125,13 +202,52 @@ export default async function SitePage({
     (invoiceBalances || []).map((row) => [row.invoice_id, row]),
   );
 
-  const { data: payments } = invoiceIds.length
+  const paymentsQuery = invoiceIds.length
     ? await supabase
         .from("payments")
         .select("id, invoice_id, amount_paise, received_date, mode, reference")
         .in("invoice_id", invoiceIds)
         .order("received_date", { ascending: false })
-    : { data: [] };
+    : null;
+  const payments = paymentsQuery?.data ?? [];
+
+  const invoicesByPo = new Map<string, typeof invoices>();
+  for (const inv of invoices || []) {
+    if (!inv.po_id) continue;
+    const list = invoicesByPo.get(inv.po_id) || [];
+    list.push(inv);
+    invoicesByPo.set(inv.po_id, list);
+  }
+
+  const paymentsByInvoice = new Map<string, NonNullable<typeof payments>>();
+  for (const p of payments || []) {
+    const list = paymentsByInvoice.get(p.invoice_id) || [];
+    list.push(p);
+    paymentsByInvoice.set(p.invoice_id, list);
+  }
+
+  // Aggregate cards — every figure derived on read, nothing hand-totaled (CLAUDE.md).
+  const totalPoValuePaise = purchaseOrders.reduce(
+    (sum, po) => sum + (poGrossById.get(po.id) ?? 0),
+    0,
+  );
+  // Cancelled invoices don't count as invoiced or pending. Pending collection
+  // is Σ balance where status ∈ {due, overdue, part-paid} (spec §6).
+  const totalInvoicedPaise = (invoices || []).reduce((sum, inv) => {
+    const cs = balancesByInvoice.get(inv.id)?.computed_status;
+    return cs === "cancelled" ? sum : sum + inv.total_paise;
+  }, 0);
+  const totalCollectedPaise = (invoiceBalances || []).reduce(
+    (sum, b) => sum + b.paid_paise,
+    0,
+  );
+  const outstandingPaise = (invoiceBalances || []).reduce(
+    (sum, b) =>
+      ["due", "overdue", "part-paid"].includes(b.computed_status)
+        ? sum + b.balance_paise
+        : sum,
+    0,
+  );
 
   const organization = Array.isArray(site.organization)
     ? site.organization[0]
@@ -142,6 +258,148 @@ export default async function SitePage({
   const csOwner = Array.isArray(site.cs_owner)
     ? site.cs_owner[0]
     : site.cs_owner;
+
+  // Who can add/edit POs, and the dropdown/multi-select options the form needs.
+  // Catalogs are read active-only (CLAUDE.md: reference data is data; only
+  // active items are selectable).
+  const orgId = organization?.id;
+  const [
+    user,
+    poTypesRes,
+    costTypesRes,
+    financialYearsRes,
+    paymentTermsRes,
+    contractTimesRes,
+    modulesRes,
+    orgSitesRes,
+  ] = await Promise.all([
+    getCurrentInternalUser(),
+    supabase.from("po_types").select("id, name").eq("active", true).order("name"),
+    supabase.from("cost_types").select("id, name").eq("active", true).order("name"),
+    supabase.from("financial_years").select("id, name").eq("active", true).order("name"),
+    supabase
+      .from("payment_terms")
+      .select("id, name, schedule_type, invoices_per_year, timing, billing_schedule_days")
+      .eq("active", true)
+      .order("name"),
+    supabase.from("contract_times").select("id, name").eq("active", true).order("name"),
+    supabase.from("modules").select("id, name").eq("active", true).order("name"),
+    orgId
+      ? supabase.from("sites").select("id, name").eq("organization_id", orgId).order("name")
+      : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+  ]);
+
+  const canEdit = canEditCatalogs(user);
+
+  // Full payment-term rows (with their billing schedule) for the renewal
+  // dropdown; the PO form only needs id + name.
+  const renewalPaymentTermsOptions: PaymentTermOption[] = (paymentTermsRes.data ?? []).map(
+    (t) => ({
+      id: t.id,
+      name: t.name,
+      schedule_type: t.schedule_type === "milestone" ? "milestone" : "periodic",
+      invoices_per_year: t.invoices_per_year ?? null,
+      timing: t.timing === "arrears" ? "arrears" : "advance",
+      billing_schedule_days: t.billing_schedule_days ?? null,
+    }),
+  );
+
+  const poFormOptions = {
+    organizationId: orgId ?? "",
+    siteId: id,
+    poTypeOptions: poTypesRes.data ?? [],
+    costTypeOptions: costTypesRes.data ?? [],
+    financialYearOptions: financialYearsRes.data ?? [],
+    paymentTermsOptions: (paymentTermsRes.data ?? []).map((t) => ({ id: t.id, name: t.name })),
+    contractTimeOptions: contractTimesRes.data ?? [],
+    moduleOptions: modulesRes.data ?? [],
+    siteOptions: orgSitesRes.data ?? [],
+  };
+
+  // Name lookup for the org's sites, used to label a PO's covered sites in the
+  // invoice "bill to" picker.
+  const siteNameById = new Map(
+    (orgSitesRes.data ?? []).map((s) => [s.id, s.name]),
+  );
+
+  // Renewals (Year 2–5 projections) for this site's POs, grouped per PO so each
+  // PO card shows its own renewals. Dates are computed on read from the site's
+  // go-live date, so they appear/update automatically once Implementation
+  // stamps it (CLAUDE.md: money/dates computed, not stored).
+  const { data: renewalRows } = poIds.length
+    ? await supabase
+        .from("renewals")
+        .select(
+          `id, po_id, year_number, offset_months, term_months,
+           expected_value_paise, renewal_value_paise, renewal_received_date,
+           payment_terms_id, status,
+           attachment:attachments!attachment_id ( storage_path, original_filename )`,
+        )
+        .in("po_id", poIds)
+        .order("year_number")
+    : { data: [] };
+
+  const renewalsByPo = new Map<string, RenewalCardData[]>();
+  await Promise.all(
+    (renewalRows ?? []).map(async (r) => {
+      const attachment = Array.isArray(r.attachment) ? r.attachment[0] : r.attachment;
+      let attached: RenewalCardData["attachment"] = null;
+      if (attachment?.storage_path) {
+        const { data: signed } = await supabase.storage
+          .from("renewal-attachments")
+          .createSignedUrl(attachment.storage_path, 60 * 60);
+        attached = {
+          filename: attachment.original_filename,
+          url: signed?.signedUrl ?? null,
+        };
+      }
+      const card: RenewalCardData = {
+        id: r.id,
+        yearNumber: r.year_number,
+        renewalDate: renewalDate(site.go_live_date, r.offset_months),
+        expectedValuePaise: r.expected_value_paise,
+        renewalValuePaise: r.renewal_value_paise,
+        renewalReceivedDate: r.renewal_received_date,
+        paymentTermsId: r.payment_terms_id,
+        status: r.status === "renewed" ? "renewed" : "upcoming",
+        attachment: attached,
+      };
+      const list = renewalsByPo.get(r.po_id) || [];
+      list.push(card);
+      renewalsByPo.set(r.po_id, list);
+    }),
+  );
+  // Keep each PO's cards ordered by year (Promise.all resolves out of order).
+  for (const list of renewalsByPo.values()) {
+    list.sort((a, b) => a.yearNumber - b.yearNumber);
+  }
+
+  // Reshape each PO into the form's edit payload (ids + rupee-free raw paise).
+  const existingPoById = new Map<string, ExistingPo>(
+    purchaseOrders.map((po) => [
+      po.id,
+      {
+        id: po.id,
+        po_number: po.po_number,
+        name: po.name ?? null,
+        po_type_id: po.po_type_id ?? null,
+        cost_type_id: po.cost_type_id ?? null,
+        po_received_date: po.po_received_date ?? null,
+        financial_year_id: po.financial_year_id ?? null,
+        gst_percent: po.gst_percent ?? null,
+        payment_terms_id: po.payment_terms_id ?? null,
+        contract_time_id: po.contract_time_id ?? null,
+        site_ids: (po.po_sites || []).map((s) => s.site_id),
+        module_ids: (po.po_modules || []).map((m) => m.module_id),
+        line_items: (po.po_line_items || []).map((li) => ({
+          description: li.description,
+          qty: li.qty,
+          unit_price_paise: li.unit_price_paise,
+        })),
+        attachment: poAttachmentById.get(po.id) ?? null,
+      },
+    ]),
+  );
 
   return (
     <div>
@@ -218,168 +476,343 @@ export default async function SitePage({
         <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
 
-      <h2 className="mt-10 text-sm font-medium uppercase tracking-wide text-slate-500">
-        Purchase orders
-      </h2>
+      <div className="mt-10 flex items-center justify-between">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          PO &amp; payments
+        </h2>
+        {canEdit && <AddPoButton {...poFormOptions} />}
+      </div>
+
+      <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
+        <SummaryCard label="Purchase orders" value={String(purchaseOrders.length)} />
+        <SummaryCard label="Total PO value" value={formatPaise(totalPoValuePaise)} />
+        <SummaryCard label="Total invoiced" value={formatPaise(totalInvoicedPaise)} />
+        <SummaryCard label="Total collected" value={formatPaise(totalCollectedPaise)} />
+        <SummaryCard
+          label="Outstanding"
+          value={formatPaise(outstandingPaise)}
+          tone={outstandingPaise > 0 ? "amber" : "default"}
+        />
+      </div>
+
       {purchaseOrders.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-400">
+        <p className="mt-4 text-sm text-slate-400">
           No purchase orders recorded for this site yet.
         </p>
       ) : (
-        <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">PO number</th>
-                <th className="px-4 py-2 text-left font-medium">Type</th>
-                <th className="px-4 py-2 text-left font-medium">Received</th>
-                <th className="px-4 py-2 text-right font-medium">
-                  Total (computed)
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {purchaseOrders.map((po) => {
-                const poType = Array.isArray(po.po_type)
-                  ? po.po_type[0]
-                  : po.po_type;
-                return (
-                  <tr key={po.id}>
-                    <td className="px-4 py-2 text-slate-900">
-                      {po.po_number}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">
-                      {poType?.name || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">
+        <div className="mt-4 space-y-3">
+          {purchaseOrders.map((po) => {
+            const poType = Array.isArray(po.po_type) ? po.po_type[0] : po.po_type;
+            const costType = Array.isArray(po.cost_type)
+              ? po.cost_type[0]
+              : po.cost_type;
+            const financialYear = Array.isArray(po.financial_year)
+              ? po.financial_year[0]
+              : po.financial_year;
+            const paymentTerm = Array.isArray(po.payment_term)
+              ? po.payment_term[0]
+              : po.payment_term;
+            const contractTime = Array.isArray(po.contract_time)
+              ? po.contract_time[0]
+              : po.contract_time;
+            const moduleNames = (po.po_modules || [])
+              .map((pm) => {
+                const mod = Array.isArray(pm.module) ? pm.module[0] : pm.module;
+                return mod?.name;
+              })
+              .filter(Boolean)
+              .join(", ");
+            const poInvoices = invoicesByPo.get(po.id) || [];
+
+            // Everything the invoice generator needs: the PO's payment-term
+            // schedule (so it can split), its ex-tax value, GST %, and the
+            // contract length in months (from Contract time).
+            const termSpec: PaymentTermSpec | null = paymentTerm
+              ? {
+                  scheduleType:
+                    paymentTerm.schedule_type === "milestone" ? "milestone" : "periodic",
+                  invoicesPerYear: paymentTerm.invoices_per_year ?? null,
+                  timing: paymentTerm.timing === "arrears" ? "arrears" : "advance",
+                  billingScheduleDays: paymentTerm.billing_schedule_days ?? null,
+                  installments: (
+                    (paymentTerm.installments || []) as {
+                      label: string;
+                      percent: number | string;
+                      sort_order: number;
+                    }[]
+                  )
+                    .slice()
+                    .sort((a, b) => a.sort_order - b.sort_order)
+                    .map((i) => ({ label: i.label, percent: Number(i.percent) })),
+                }
+              : null;
+            const invoiceCtx: PoInvoiceContext = {
+              poId: po.id,
+              poNumber: po.po_number,
+              poName: po.name ?? null,
+              netPaise: poNetById.get(po.id) ?? 0,
+              gstPercent: po.gst_percent ?? null,
+              contractMonths: contractTime?.months ?? 12,
+              poReceivedDate: po.po_received_date ?? null,
+              term: termSpec,
+              termName: paymentTerm?.name ?? null,
+              coveredSites: (po.po_sites || []).map((s) => ({
+                id: s.site_id,
+                name: siteNameById.get(s.site_id) ?? "Site",
+              })),
+            };
+
+            return (
+              <details
+                key={po.id}
+                className="group overflow-hidden rounded-lg border border-slate-200 bg-white"
+              >
+                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3">
+                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <span className="font-medium text-slate-900">{po.po_number}</span>
+                    <span className="text-sm text-slate-500">{poType?.name || "—"}</span>
+                    <span className="text-sm text-slate-500">{moduleNames || "—"}</span>
+                    <span className="text-sm text-slate-500">{costType?.name || "—"}</span>
+                    <span className="text-sm text-slate-500">
                       {po.po_received_date || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right font-medium tabular-nums text-slate-900">
-                      {formatPaise(poTotalsById.get(po.id) ?? 0)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                    </span>
+                  </div>
+                  <span className="flex shrink-0 items-center gap-3">
+                    <span className="font-medium tabular-nums text-slate-900">
+                      {formatPaise(poGrossById.get(po.id) ?? 0)}
+                    </span>
+                    {canEdit && existingPoById.get(po.id) && (
+                      <EditPoButton po={existingPoById.get(po.id)!} {...poFormOptions} />
+                    )}
+                  </span>
+                </summary>
 
-      <h2 className="mt-10 text-sm font-medium uppercase tracking-wide text-slate-500">
-        Invoices
-      </h2>
-      {!invoices || invoices.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-400">
-          No invoices raised to this site yet.
-        </p>
-      ) : (
-        <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">Invoice</th>
-                <th className="px-4 py-2 text-left font-medium">PO</th>
-                <th className="px-4 py-2 text-left font-medium">Issued</th>
-                <th className="px-4 py-2 text-left font-medium">Due</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
-                <th className="px-4 py-2 text-right font-medium">GST</th>
-                <th className="px-4 py-2 text-right font-medium">Total</th>
-                <th className="px-4 py-2 text-right font-medium">Balance</th>
-                <th className="px-4 py-2 text-left font-medium">Status</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {invoices.map((inv) => {
-                const po = Array.isArray(inv.purchase_order)
-                  ? inv.purchase_order[0]
-                  : inv.purchase_order;
-                const balance = balancesByInvoice.get(inv.id);
-                const status = balance?.computed_status || inv.status;
-                const isOverdue = status === "overdue";
-                return (
-                  <tr
-                    key={inv.id}
-                    className={isOverdue ? "bg-red-50/40" : undefined}
-                  >
-                    <td className="px-4 py-2 text-slate-900">
-                      {inv.invoice_number}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">
-                      {po?.po_number || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">
-                      {inv.issue_date || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">
-                      {inv.due_date || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-700">
-                      {formatPaise(inv.amount_paise)}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-700">
-                      {formatPaise(inv.gst_amount_paise)}
-                    </td>
-                    <td className="px-4 py-2 text-right font-medium tabular-nums text-slate-900">
-                      {formatPaise(inv.total_paise)}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-900">
-                      {formatPaise(balance?.balance_paise ?? inv.total_paise)}
-                    </td>
-                    <td className="px-4 py-2">
-                      <StatusBadge status={status} />
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      )}
+                <div className="border-t border-slate-100 px-4 py-3">
+                  <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                        Financial year
+                      </dt>
+                      <dd className="text-slate-700">{financialYear?.name || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                        Payment terms
+                      </dt>
+                      <dd className="text-slate-700">{paymentTerm?.name || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                        Contract time
+                      </dt>
+                      <dd className="text-slate-700">{contractTime?.name || "—"}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                        PO attachment
+                      </dt>
+                      <dd className="text-slate-700">
+                        {(() => {
+                          const att = poAttachmentById.get(po.id);
+                          if (!att) return "—";
+                          return att.url ? (
+                            <a
+                              href={att.url}
+                              target="_blank"
+                              rel="noreferrer"
+                              className="font-medium text-indigo-600 hover:text-indigo-700"
+                            >
+                              {att.filename}
+                            </a>
+                          ) : (
+                            att.filename
+                          );
+                        })()}
+                      </dd>
+                    </div>
+                  </dl>
 
-      <h2 className="mt-10 text-sm font-medium uppercase tracking-wide text-slate-500">
-        Payments received
-      </h2>
-      {!payments || payments.length === 0 ? (
-        <p className="mt-3 text-sm text-slate-400">
-          No payments recorded against this site&apos;s invoices yet.
-        </p>
-      ) : (
-        <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
-          <table className="w-full text-sm">
-            <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
-              <tr>
-                <th className="px-4 py-2 text-left font-medium">Invoice</th>
-                <th className="px-4 py-2 text-left font-medium">Received</th>
-                <th className="px-4 py-2 text-left font-medium">Mode</th>
-                <th className="px-4 py-2 text-left font-medium">Reference</th>
-                <th className="px-4 py-2 text-right font-medium">Amount</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-100">
-              {payments.map((p) => {
-                const invoice = invoices?.find((i) => i.id === p.invoice_id);
-                return (
-                  <tr key={p.id}>
-                    <td className="px-4 py-2 text-slate-900">
-                      {invoice?.invoice_number || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">
-                      {p.received_date}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">
-                      {p.mode || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-slate-700">
-                      {p.reference || "—"}
-                    </td>
-                    <td className="px-4 py-2 text-right tabular-nums text-slate-900">
-                      {formatPaise(p.amount_paise)}
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    Line items
+                  </h3>
+                  {(po.po_line_items || []).length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-400">No line items recorded.</p>
+                  ) : (
+                    <table className="mt-2 w-full text-sm">
+                      <thead className="text-xs uppercase tracking-wide text-slate-500">
+                        <tr>
+                          <th className="py-1 text-left font-medium">Description</th>
+                          <th className="py-1 text-right font-medium">Qty</th>
+                          <th className="py-1 text-right font-medium">Unit price</th>
+                          <th className="py-1 text-right font-medium">Amount</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100">
+                        {(po.po_line_items || []).map((li) => (
+                          <tr key={li.id}>
+                            <td className="py-1 text-slate-700">{li.description}</td>
+                            <td className="py-1 text-right tabular-nums text-slate-700">
+                              {li.qty}
+                            </td>
+                            <td className="py-1 text-right tabular-nums text-slate-700">
+                              {formatPaise(li.unit_price_paise)}
+                            </td>
+                            <td className="py-1 text-right tabular-nums text-slate-900">
+                              {formatPaise(li.amount_paise)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className="border-t border-slate-200">
+                        <tr>
+                          <td colSpan={3} className="py-1 text-right text-xs uppercase tracking-wide text-slate-500">
+                            Subtotal (goods)
+                          </td>
+                          <td className="py-1 text-right tabular-nums text-slate-600">
+                            {formatPaise(poNetById.get(po.id) ?? 0)}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={3} className="py-1 text-right text-xs uppercase tracking-wide text-slate-500">
+                            GST{po.gst_percent ? ` (${po.gst_percent}%)` : ""}
+                          </td>
+                          <td className="py-1 text-right tabular-nums text-slate-600">
+                            {formatPaise((poGrossById.get(po.id) ?? 0) - (poNetById.get(po.id) ?? 0))}
+                          </td>
+                        </tr>
+                        <tr>
+                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                            PO total
+                          </td>
+                          <td className="py-1 text-right font-semibold tabular-nums text-slate-900">
+                            {formatPaise(poGrossById.get(po.id) ?? 0)}
+                          </td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  )}
+
+                  <div className="mt-4 flex items-center justify-between">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                      Invoices
+                    </h3>
+                    {canEdit && (
+                      <span className="flex items-center gap-3">
+                        <InvoiceActionsForPo ctx={invoiceCtx} siteId={id} />
+                      </span>
+                    )}
+                  </div>
+                  {poInvoices.length === 0 ? (
+                    <p className="mt-2 text-sm text-slate-400">
+                      No invoices raised against this PO for this site yet.
+                    </p>
+                  ) : (
+                    <div className="mt-2 space-y-3">
+                      {poInvoices.map((inv) => {
+                        const balance = balancesByInvoice.get(inv.id);
+                        const status = balance?.computed_status || inv.status;
+                        const isOverdue = status === "overdue";
+                        const invPayments = paymentsByInvoice.get(inv.id) || [];
+                        return (
+                          <div
+                            key={inv.id}
+                            className={`rounded-md border ${
+                              isOverdue ? "border-red-200 bg-red-50/40" : "border-slate-100"
+                            } p-3`}
+                          >
+                            <div className="flex flex-wrap items-baseline justify-between gap-2">
+                              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
+                                <span className="font-medium text-slate-900">
+                                  {inv.invoice_number}
+                                </span>
+                                <span className="text-slate-500">
+                                  Issued {inv.issue_date || "—"}
+                                </span>
+                                <span className="text-slate-500">
+                                  Due {inv.due_date || "—"}
+                                </span>
+                                <StatusBadge status={status} />
+                              </div>
+                              <div className="flex gap-4 text-sm tabular-nums">
+                                <span className="text-slate-500">
+                                  Amount {formatPaise(inv.amount_paise)}
+                                </span>
+                                <span className="text-slate-500">
+                                  GST {formatPaise(inv.gst_amount_paise)}
+                                </span>
+                                <span className="font-medium text-slate-900">
+                                  Total {formatPaise(inv.total_paise)}
+                                </span>
+                                <span className="font-medium text-slate-900">
+                                  Balance{" "}
+                                  {formatPaise(balance?.balance_paise ?? inv.total_paise)}
+                                </span>
+                                {canEdit &&
+                                  status !== "cleared" &&
+                                  status !== "cancelled" && (
+                                    <RecordPaymentButton
+                                      invoiceId={inv.id}
+                                      invoiceNumber={inv.invoice_number}
+                                      balancePaise={balance?.balance_paise ?? inv.total_paise}
+                                      siteId={id}
+                                    />
+                                  )}
+                                {canEdit && (
+                                  <EditInvoiceButton
+                                    invoiceId={inv.id}
+                                    invoiceNumber={inv.invoice_number}
+                                    currentStatus={inv.status}
+                                    issueDate={inv.issue_date}
+                                    dueDate={inv.due_date}
+                                    siteId={id}
+                                  />
+                                )}
+                              </div>
+                            </div>
+
+                            {invPayments.length > 0 && (
+                              <table className="mt-2 w-full text-sm">
+                                <thead className="text-xs uppercase tracking-wide text-slate-500">
+                                  <tr>
+                                    <th className="py-1 text-left font-medium">Received</th>
+                                    <th className="py-1 text-left font-medium">Mode</th>
+                                    <th className="py-1 text-left font-medium">Reference</th>
+                                    <th className="py-1 text-right font-medium">Amount</th>
+                                  </tr>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                  {invPayments.map((p) => (
+                                    <tr key={p.id}>
+                                      <td className="py-1 text-slate-700">{p.received_date}</td>
+                                      <td className="py-1 text-slate-700">{p.mode || "—"}</td>
+                                      <td className="py-1 text-slate-700">
+                                        {p.reference || "—"}
+                                      </td>
+                                      <td className="py-1 text-right tabular-nums text-slate-900">
+                                        {formatPaise(p.amount_paise)}
+                                      </td>
+                                    </tr>
+                                  ))}
+                                </tbody>
+                              </table>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  <RenewalsForPo
+                    renewals={renewalsByPo.get(po.id) ?? []}
+                    siteId={id}
+                    canEdit={canEdit}
+                    goLiveSet={Boolean(site.go_live_date)}
+                    paymentTermsOptions={renewalPaymentTermsOptions}
+                  />
+                </div>
+              </details>
+            );
+          })}
         </div>
       )}
     </div>

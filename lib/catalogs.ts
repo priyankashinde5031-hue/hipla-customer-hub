@@ -102,6 +102,30 @@ export const CATALOGS: CatalogConfig[] = [
       { key: "months", label: "Months", type: "number", required: true },
     ],
   },
+  {
+    slug: "financial-years",
+    table: "financial_years",
+    label: "Financial Years",
+    singular: "Financial Year",
+    description: "Financial years selectable on a Purchase Order, e.g. FY2025-26.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
+  // NOTE: "Payment Terms" is intentionally NOT a generic catalog — it carries
+  // a split definition (per-year count or milestone %s) and a billing-schedule
+  // day count, so it has its own editor at /settings/payment-terms.
+  {
+    slug: "contract-times",
+    table: "contract_times",
+    label: "Contract Times",
+    singular: "Contract Time",
+    description: "Contract durations selectable on a Purchase Order, e.g. 1 year.",
+    uniqueField: "name",
+    fields: [
+      { key: "name", label: "Name", type: "text", required: true },
+      { key: "months", label: "Length in months", type: "number", required: true },
+    ],
+  },
 ];
 
 export function getCatalogBySlug(slug: string): CatalogConfig | undefined {

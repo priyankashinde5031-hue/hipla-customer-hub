@@ -147,6 +147,49 @@ insert into term_lengths (label, months) values
 on conflict (label) do nothing;
 
 -- ---------------------------------------------------------------------
+-- Purchase Order dropdowns (managed in Settings; see migration
+-- 20260630000001). Financial year / Payment terms / Contract time.
+-- ---------------------------------------------------------------------
+insert into financial_years (name) values
+  ('FY2023-24'), ('FY2024-25'), ('FY2025-26'), ('FY2026-27'), ('FY2027-28')
+on conflict (name) do nothing;
+
+-- Payment terms define how a PO splits into invoices (see migration
+-- 20260630000002). periodic = N invoices/year; milestone = named % stages.
+insert into payment_terms (name, schedule_type, invoices_per_year, timing, billing_schedule_days) values
+  ('Advance',            'periodic',  1, 'advance',  0),
+  ('On receipt',         'periodic',  1, 'advance',  0),
+  ('Net 15',             'periodic',  1, 'advance', 15),
+  ('Net 30',             'periodic',  1, 'advance', 30),
+  ('Net 45',             'periodic',  1, 'advance', 45),
+  ('Net 60',             'periodic',  1, 'advance', 60),
+  ('Net 90',             'periodic',  1, 'advance', 90),
+  ('Monthly',            'periodic', 12, 'advance',  0),
+  ('Quarterly advance',  'periodic',  4, 'advance',  0),
+  ('Half-yearly advance', 'periodic', 2, 'advance',  0),
+  ('Annual advance',     'periodic',  1, 'advance',  0)
+on conflict (name) do nothing;
+
+do $$
+declare
+  mt_id uuid;
+begin
+  if not exists (select 1 from payment_terms where name = '25 / 25 / 50 milestones') then
+    insert into payment_terms (name, schedule_type, invoices_per_year, timing, billing_schedule_days)
+    values ('25 / 25 / 50 milestones', 'milestone', null, 'advance', 15)
+    returning id into mt_id;
+    insert into payment_term_installments (payment_term_id, sort_order, label, percent) values
+      (mt_id, 1, 'Advance', 25),
+      (mt_id, 2, 'On material delivery', 25),
+      (mt_id, 3, 'On go-live', 50);
+  end if;
+end $$;
+
+insert into contract_times (name, months) values
+  ('1 year', 12), ('2 years', 24), ('3 years', 36), ('5 years', 60)
+on conflict (name) do nothing;
+
+-- ---------------------------------------------------------------------
 -- Dummy data: 3 Organizations, each with an HQ Site + 1-2 child Sites.
 -- Obviously fake names, per CLAUDE.md's "Data & environments" rule.
 -- Gated on organization legal_name so re-running this script is safe.
@@ -215,6 +258,9 @@ declare
   vms_module_id uuid;
   new_po_type_id uuid;
   software_cost_type_id uuid;
+  fy_2025_id uuid;
+  net30_id uuid;
+  contract_time_1yr_id uuid;
   contract_id uuid;
   po_id uuid;
   line_item_id uuid;
@@ -228,6 +274,9 @@ begin
     select id into vms_module_id from modules where name = 'VMS with host';
     select id into new_po_type_id from po_types where name = 'New PO';
     select id into software_cost_type_id from cost_types where name = 'Software';
+    select id into fy_2025_id from financial_years where name = 'FY2025-26';
+    select id into net30_id from payment_terms where name = 'Net 30';
+    select id into contract_time_1yr_id from contract_times where name = '1 year';
 
     insert into contracts (organization_id, contract_number, go_live_anchor_date, initial_term_id, acv_paise, billing_frequency, payment_terms, status)
     values (acme_org_id, 'CON-ACME-0001', current_date - interval '400 days', term_1yr_id, 50000000, 'Annual', 'Net 30', 'active')
@@ -236,8 +285,8 @@ begin
     insert into contract_sites (contract_id, site_id) values (contract_id, acme_hq_id);
     insert into contract_modules (contract_id, module_id) values (contract_id, vms_module_id);
 
-    insert into purchase_orders (organization_id, contract_id, po_number, customer_po_ref, po_type_id, cost_type_id, financial_year, po_received_date, gst_percent, payment_terms)
-    values (acme_org_id, contract_id, 'PO-ACME-0001', 'ACME/PO/2025/001', new_po_type_id, software_cost_type_id, 'FY2025-26', current_date - interval '395 days', 18.00, 'Net 30')
+    insert into purchase_orders (organization_id, contract_id, po_number, customer_po_ref, po_type_id, cost_type_id, financial_year, financial_year_id, po_received_date, gst_percent, payment_terms, payment_terms_id, contract_time_id)
+    values (acme_org_id, contract_id, 'PO-ACME-0001', 'ACME/PO/2025/001', new_po_type_id, software_cost_type_id, 'FY2025-26', fy_2025_id, current_date - interval '395 days', 18.00, 'Net 30', net30_id, contract_time_1yr_id)
     returning id into po_id;
 
     insert into po_sites (po_id, site_id) values (po_id, acme_hq_id);
@@ -258,6 +307,57 @@ begin
     insert into invoices (po_id, contract_id, billed_site_id, invoice_number, amount_paise, gst_number, gst_amount_paise, issue_date, due_date, status)
     values (po_id, contract_id, acme_hq_id, 'INV-ACME-0002', 50000000, '27AAAAA0000A1Z5', 9000000, current_date - interval '40 days', current_date - interval '10 days', 'overdue')
     returning id into invoice_overdue_id;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
+-- A multi-site sample PO (covers Mumbai HQ + Pune) so the invoice
+-- "Bill to site" picker has something to demonstrate. No invoices —
+-- generate them from the app to exercise the picker.
+-- ---------------------------------------------------------------------
+do $$
+declare
+  acme_org_id uuid;
+  hq_id uuid;
+  pune_id uuid;
+  vms_id uuid;
+  ms_po_id uuid;
+begin
+  if not exists (select 1 from purchase_orders where name = 'Acme multi-site rollout — VMS (sample)') then
+    select id into acme_org_id from organizations where legal_name = 'Acme Corp Pvt Ltd';
+    select id into hq_id from sites where name = 'Acme Corp HQ - Mumbai';
+    select id into pune_id from sites where name = 'Acme Corp - Pune Office';
+    select id into vms_id from modules where name = 'VMS with host';
+
+    insert into purchase_orders (
+      organization_id, name, po_type_id, cost_type_id, financial_year_id,
+      payment_terms_id, contract_time_id, po_received_date, gst_percent
+    )
+    values (
+      acme_org_id, 'Acme multi-site rollout — VMS (sample)',
+      (select id from po_types where name = 'New PO'),
+      (select id from cost_types where name = 'Software'),
+      (select id from financial_years where name = 'FY2025-26'),
+      (select id from payment_terms where name = 'Half-yearly advance'),
+      (select id from contract_times where name = '1 year'),
+      '2026-01-01', 18.00
+    )
+    returning id into ms_po_id;
+
+    insert into po_sites (po_id, site_id) values (ms_po_id, hq_id), (ms_po_id, pune_id);
+    insert into po_modules (po_id, module_id) values (ms_po_id, vms_id);
+    insert into po_line_items (po_id, description, qty, unit_price_paise)
+    values (ms_po_id, 'VMS rollout — Mumbai + Pune (annual)', 1, 40000000);
+
+    -- Year 2–5 renewal projections for the sample PO. In the app these are
+    -- auto-generated on PO creation; seeded here so the section demos with data.
+    -- 1-year term, anchored to HQ → Year 2,3,4,5. Expected = the Year-1 PO value.
+    insert into renewals (po_id, organization_id, anchor_site_id, year_number, offset_months, term_months, expected_value_paise)
+    values
+      (ms_po_id, acme_org_id, hq_id, 2, 12, 12, 40000000),
+      (ms_po_id, acme_org_id, hq_id, 3, 24, 12, 40000000),
+      (ms_po_id, acme_org_id, hq_id, 4, 36, 12, 40000000),
+      (ms_po_id, acme_org_id, hq_id, 5, 48, 12, 40000000);
   end if;
 end $$;
 
