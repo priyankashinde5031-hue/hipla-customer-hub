@@ -82,6 +82,11 @@ function PlaceholderCard({
   );
 }
 
+// Known keys from the Add Site form (line1, line2, city, state, pincode),
+// rendered as a normal postal address. Any other/legacy keys fall back to a
+// plain key: value list so nothing is silently dropped.
+const KNOWN_ADDRESS_KEYS = ["line1", "line2", "city", "state", "pincode"];
+
 function AddressBlock({
   label,
   address,
@@ -90,18 +95,34 @@ function AddressBlock({
   address: Record<string, unknown> | null;
 }) {
   const hasContent = address && Object.keys(address).length > 0;
+  const isKnownShape =
+    hasContent && Object.keys(address!).every((k) => KNOWN_ADDRESS_KEYS.includes(k));
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
       <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
       </h3>
-      {hasContent ? (
-        <pre className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-          {JSON.stringify(address, null, 2)}
-        </pre>
-      ) : (
+      {!hasContent ? (
         <p className="mt-2 text-sm text-slate-400">Not recorded yet.</p>
+      ) : isKnownShape ? (
+        <div className="mt-2 text-sm text-slate-700">
+          {Boolean(address!.line1) && <p>{String(address!.line1)}</p>}
+          {Boolean(address!.line2) && <p>{String(address!.line2)}</p>}
+          <p>
+            {[address!.city, address!.state].filter(Boolean).join(", ")}
+            {address!.pincode ? ` — ${address!.pincode}` : ""}
+          </p>
+        </div>
+      ) : (
+        <dl className="mt-2 space-y-1 text-sm text-slate-700">
+          {Object.entries(address!).map(([key, value]) => (
+            <div key={key} className="flex gap-1">
+              <dt className="capitalize text-slate-500">{key}:</dt>
+              <dd>{String(value)}</dd>
+            </div>
+          ))}
+        </dl>
       )}
     </div>
   );
