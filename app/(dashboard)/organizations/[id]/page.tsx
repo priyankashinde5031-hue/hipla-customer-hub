@@ -1,6 +1,8 @@
 import Link from "next/link";
-import { notFound } from "next/navigation";
+import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { AddSiteButton } from "./site-form";
 
 const STATUS_STYLES: Record<string, string> = {
   live: "bg-green-50 text-green-700",
@@ -35,6 +37,19 @@ export default async function OrganizationDetailPage({
     .order("is_hq", { ascending: false })
     .order("name");
 
+  // Organization = Site collapse (spec §5.1: almost everything hangs off the
+  // Site). A single-site org has no separate "sites" step — jump straight
+  // into that Site's 360 rather than showing a one-row list.
+  if (sites && sites.length === 1) {
+    redirect(`/sites/${sites[0].id}`);
+  }
+
+  const [user, { data: owners }] = await Promise.all([
+    getCurrentInternalUser(),
+    supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
+  ]);
+  const canEdit = canEditCatalogs(user);
+
   return (
     <div>
       <Link href="/organizations" className="text-sm text-indigo-600">
@@ -49,9 +64,18 @@ export default async function OrganizationDetailPage({
         {organization.industry ? ` · ${organization.industry}` : ""}
       </p>
 
-      <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-500">
-        Sites
-      </h2>
+      <div className="mt-8 flex items-center justify-between">
+        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+          Sites
+        </h2>
+        {canEdit && (
+          <AddSiteButton
+            organizationId={id}
+            suggestHq={(sites?.length ?? 0) === 0}
+            ownerOptions={owners ?? []}
+          />
+        )}
+      </div>
 
       {sitesError && (
         <p className="mt-2 text-sm text-red-600">

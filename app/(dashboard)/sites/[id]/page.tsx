@@ -60,6 +60,28 @@ function SummaryCard({
   );
 }
 
+// Modules 5–9 of the spec (Implementation, Usage, Support, SPOCs, Scope
+// Changes, Hardware) aren't built yet — CLAUDE.md says not to start them
+// until told. These render the Site 360 layout now; real data lands
+// module-by-module later, same as PO & Invoices did.
+function PlaceholderCard({
+  title,
+  description,
+}: {
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="rounded-lg border border-dashed border-slate-200 bg-white p-4">
+      <h3 className="text-sm font-medium text-slate-900">{title}</h3>
+      <p className="mt-1 text-sm text-slate-400">{description}</p>
+      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-300">
+        Coming soon
+      </p>
+    </div>
+  );
+}
+
 function AddressBlock({
   label,
   address,
@@ -142,6 +164,20 @@ export default async function SitePage({
     .filter((po): po is NonNullable<typeof po> => Boolean(po));
 
   const poIds = purchaseOrders.map((po) => po.id);
+
+  // Licenses card = distinct modules covered by this site's POs. Derived on
+  // read from po_modules rather than hand-tracked (CLAUDE.md: reference/usage
+  // data isn't hand-totaled where it can be computed).
+  const licenseModules = Array.from(
+    new Map(
+      purchaseOrders
+        .flatMap((po) => po.po_modules || [])
+        .map((pm) => {
+          const mod = Array.isArray(pm.module) ? pm.module[0] : pm.module;
+          return [pm.module_id, mod?.name ?? "—"] as const;
+        }),
+    ).entries(),
+  ).sort((a, b) => a[1].localeCompare(b[1]));
 
   const { data: poTotals } = poIds.length
     ? await supabase.from("po_totals").select("po_id, po_value_paise").in("po_id", poIds)
@@ -401,14 +437,18 @@ export default async function SitePage({
     ]),
   );
 
+  // A single-site org's detail page redirects straight back here, so send
+  // the breadcrumb to the list instead of bouncing the user in a loop.
+  const orgIsSingleSite = (orgSitesRes.data?.length ?? 0) <= 1;
+
   return (
     <div>
       {organization && (
         <Link
-          href={`/organizations/${organization.id}`}
+          href={orgIsSingleSite ? "/organizations" : `/organizations/${organization.id}`}
           className="text-sm text-indigo-600"
         >
-          ← {organization.brand_name || organization.legal_name}
+          ← {orgIsSingleSite ? "Organizations" : organization.brand_name || organization.legal_name}
         </Link>
       )}
 
@@ -815,6 +855,58 @@ export default async function SitePage({
           })}
         </div>
       )}
+
+      <h2 className="mt-10 text-sm font-medium uppercase tracking-wide text-slate-500">
+        Licenses
+      </h2>
+      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
+        {licenseModules.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            No modules licensed yet — add a PO covering this site with modules selected.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {licenseModules.map(([moduleId, name]) => (
+              <span
+                key={moduleId}
+                className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <h2 className="mt-10 text-sm font-medium uppercase tracking-wide text-slate-500">
+        Implementation, usage &amp; support
+      </h2>
+      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <PlaceholderCard
+          title="Implementation"
+          description="Scope, stages, and go-live tracking for this site."
+        />
+        <PlaceholderCard
+          title="Customer Usage"
+          description="Usage health per module, imported from Hipla's own systems."
+        />
+        <PlaceholderCard
+          title="Support"
+          description="Ticket volume and topics logged for this site."
+        />
+        <PlaceholderCard
+          title="Customer SPOCs"
+          description="Points of contact for this site and its organization."
+        />
+        <PlaceholderCard
+          title="Scope Changes"
+          description="Approved changes to this site's implementation scope."
+        />
+        <PlaceholderCard
+          title="Hardware & Replacement"
+          description="Devices deployed at this site and their replacement history."
+        />
+      </div>
     </div>
   );
 }

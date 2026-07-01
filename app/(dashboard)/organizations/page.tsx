@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { AddOrganizationButton } from "./organization-form";
 
 const STATUS_STYLES: Record<string, string> = {
   active: "bg-green-50 text-green-700",
@@ -9,19 +11,30 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default async function OrganizationsPage() {
   const supabase = await createClient();
-  const { data: organizations, error } = await supabase
-    .from("organizations")
-    .select("id, legal_name, brand_name, industry, status")
-    .order("legal_name");
+  const [{ data: organizations, error }, user, { data: owners }] = await Promise.all([
+    supabase
+      .from("organizations")
+      .select("id, legal_name, brand_name, industry, status")
+      .order("legal_name"),
+    getCurrentInternalUser(),
+    supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
+  ]);
+
+  const canEdit = canEditCatalogs(user);
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-        Organizations
-      </h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Every customer HQ we work with.
-      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            Organizations
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Every customer HQ we work with.
+          </p>
+        </div>
+        {canEdit && <AddOrganizationButton ownerOptions={owners ?? []} />}
+      </div>
 
       {error && (
         <p className="mt-6 text-sm text-red-600">
