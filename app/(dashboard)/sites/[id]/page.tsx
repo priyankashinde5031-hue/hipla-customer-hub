@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { AddSiteButton } from "@/app/(dashboard)/organizations/[id]/site-form";
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
@@ -329,6 +330,7 @@ export default async function SitePage({
     contractTimesRes,
     modulesRes,
     orgSitesRes,
+    ownersRes,
   ] = await Promise.all([
     getCurrentInternalUser(),
     supabase.from("po_types").select("id, name").eq("active", true).order("name"),
@@ -344,6 +346,7 @@ export default async function SitePage({
     orgId
       ? supabase.from("sites").select("id, name").eq("organization_id", orgId).order("name")
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
   ]);
 
   const canEdit = canEditCatalogs(user);
@@ -473,18 +476,30 @@ export default async function SitePage({
         </Link>
       )}
 
-      <div className="mt-2 flex items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          {site.name}
-        </h1>
-        {site.is_hq && (
-          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
-            HQ
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+            {site.name}
+          </h1>
+          {site.is_hq && (
+            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+              HQ
+            </span>
+          )}
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
+            {site.status}
           </span>
+        </div>
+        {/* Always available here too — a single-site org never shows its own
+            sites list (it redirects straight into this page), so this is
+            the only way to add a second site without a dead end. */}
+        {canEdit && orgId && (
+          <AddSiteButton
+            organizationId={orgId}
+            suggestHq={false}
+            ownerOptions={ownersRes.data ?? []}
+          />
         )}
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
-          {site.status}
-        </span>
       </div>
 
       <dl className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
