@@ -12,6 +12,11 @@ import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
 import {
+  HardwareSection,
+  type ActiveDevice,
+  type ReplacementRow,
+} from "./hardware-section";
+import {
   RenewalsForPo,
   type RenewalCardData,
   type PaymentTermOption,
@@ -375,6 +380,7 @@ export default async function SitePage({
     modulesRes,
     orgSitesRes,
     ownersRes,
+    hardwareOptionsRes,
   ] = await Promise.all([
     getCurrentInternalUser(),
     supabase.from("po_types").select("id, name").eq("active", true).order("name"),
@@ -391,6 +397,7 @@ export default async function SitePage({
       ? supabase.from("sites").select("id, name").eq("organization_id", orgId).order("name")
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("hardware_catalog").select("id, name").eq("active", true).order("name"),
   ]);
 
   const canEdit = canEditCatalogs(user);
@@ -554,6 +561,66 @@ export default async function SitePage({
     : purchaseOrders.length > 0
       ? "No upcoming renewals"
       : null;
+
+  // Hardware & device replacement (spec: site-level feature). All non-deleted
+  // devices for this site, plus every replacement event. Device "status" is
+  // derived (never stored): a device is active unless it's the old side of a
+  // replacement; it's a replacement unit if it's the new side of one.
+  const [deviceRes, replacementRes] = await Promise.all([
+    supabase
+      .from("devices")
+      .select("id, esper_id, name_on_esper, hardware:hardware_catalog ( name )")
+      .eq("site_id", id)
+      .eq("is_deleted", false),
+    supabase
+      .from("device_replacements")
+      .select(
+        `id, old_device_id, new_device_id, replaced_at, notes,
+         approver:internal_users!device_replacements_approved_by_fkey ( name )`,
+      )
+      .eq("site_id", id)
+      .order("replaced_at", { ascending: false }),
+  ]);
+
+  const deviceRows = deviceRes.data ?? [];
+  const replacementRows = replacementRes.data ?? [];
+
+  const replacedOldIds = new Set(replacementRows.map((r) => r.old_device_id));
+  const replacementNewIds = new Set(replacementRows.map((r) => r.new_device_id));
+
+  const hardwareName = (row: (typeof deviceRows)[number]) => {
+    const hw = Array.isArray(row.hardware) ? row.hardware[0] : row.hardware;
+    return hw?.name ?? "—";
+  };
+  const deviceById = new Map(deviceRows.map((d) => [d.id, d]));
+
+  // Active = not deleted and not yet replaced (spec §2 derived status).
+  const activeDevices: ActiveDevice[] = deviceRows
+    .filter((d) => !replacedOldIds.has(d.id))
+    .map((d) => ({
+      id: d.id,
+      hardwareName: hardwareName(d),
+      esperId: d.esper_id,
+      nameOnEsper: d.name_on_esper,
+      isReplacementUnit: replacementNewIds.has(d.id),
+    }));
+
+  const replacements: ReplacementRow[] = replacementRows.map((r) => {
+    const oldDevice = deviceById.get(r.old_device_id);
+    const newDevice = deviceById.get(r.new_device_id);
+    const approver = Array.isArray(r.approver) ? r.approver[0] : r.approver;
+    return {
+      id: r.id,
+      oldHardwareName: oldDevice ? hardwareName(oldDevice) : "—",
+      oldEsperId: oldDevice?.esper_id ?? "—",
+      newEsperId: newDevice?.esper_id ?? "—",
+      replacedAt: r.replaced_at,
+      approverName: approver?.name ?? "—",
+      notes: r.notes ?? null,
+    };
+  });
+
+  const hardwareOptions = hardwareOptionsRes.data ?? [];
 
   // Anchor targets for the sticky sub-header nav (ids match the section markup).
   const navSections: NavSection[] = [
@@ -1104,12 +1171,16 @@ export default async function SitePage({
           title="Scope Changes"
           description="Approved changes to this site's implementation scope."
         />
-        <PlaceholderCard
-          id="hardware"
-          title="Hardware & Replacement"
-          description="Devices deployed at this site and their replacement history."
-        />
       </div>
+
+      <HardwareSection
+        siteId={id}
+        canEdit={canEdit}
+        activeDevices={activeDevices}
+        replacements={replacements}
+        hardwareOptions={hardwareOptions}
+        approverOptions={ownersRes.data ?? []}
+      />
     </div>
   );
 }

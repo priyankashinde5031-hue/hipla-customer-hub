@@ -1,10 +1,11 @@
 import { createClient } from "@/lib/supabase/server";
+import type { UserRole } from "@/lib/roles";
 
 export type CurrentInternalUser = {
   id: string;
   email: string;
   name: string;
-  role: "admin" | "manager" | "cs_onboarding" | "read_only";
+  role: UserRole;
 };
 
 export async function getCurrentInternalUser(): Promise<CurrentInternalUser | null> {
@@ -24,4 +25,10 @@ export async function getCurrentInternalUser(): Promise<CurrentInternalUser | nu
 
 export function canEditCatalogs(user: CurrentInternalUser | null): boolean {
   return user?.role === "admin" || user?.role === "manager";
+}
+
+// Managing staff accounts (and therefore roles) is admin-only. Mirrors the
+// is_admin() RLS helper so the UI gate matches what the database enforces.
+export function canManageUsers(user: CurrentInternalUser | null): boolean {
+  return user?.role === "admin";
 }
