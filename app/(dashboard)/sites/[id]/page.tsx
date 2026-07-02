@@ -5,6 +5,7 @@ import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
 import { AddSiteButton } from "@/app/(dashboard)/organizations/[id]/site-form";
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
+import { PoTableRow } from "./po-table";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
@@ -25,6 +26,19 @@ const STATUS_STYLES: Record<string, string> = {
   raised: "bg-slate-100 text-slate-600",
   cancelled: "bg-slate-100 text-slate-400",
 };
+
+// Design system: dates render as "30 Jun 2026", never raw ISO. Parses the
+// stored YYYY-MM-DD without going through Date() (avoids timezone day-shift).
+const MONTH_ABBR = [
+  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
+  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
+];
+function formatDisplayDate(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return iso;
+  return `${Number(m[3])} ${MONTH_ABBR[Number(m[2]) - 1]} ${m[1]}`;
+}
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -576,7 +590,20 @@ export default async function SitePage({
           No purchase orders recorded for this site yet.
         </p>
       ) : (
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+          <table className="w-full border-collapse text-left [font-variant-numeric:tabular-nums]">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+              <tr className="border-b border-slate-200">
+                <th className="py-2 pl-2 pr-3 font-medium">PO Number</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Product</th>
+                <th className="px-3 py-2 font-medium">Type</th>
+                <th className="px-3 py-2 font-medium">Renewal / Expiry</th>
+                <th className="px-3 py-2 text-right font-medium">Amount</th>
+                <th className="py-2 pl-3 pr-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
           {purchaseOrders.map((po) => {
             const poType = Array.isArray(po.po_type) ? po.po_type[0] : po.po_type;
             const costType = Array.isArray(po.cost_type)
@@ -638,32 +665,29 @@ export default async function SitePage({
               })),
             };
 
-            return (
-              <details
-                key={po.id}
-                className="group overflow-hidden rounded-lg border border-slate-200 bg-white"
-              >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3">
-                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <span className="font-medium text-slate-900">{po.po_number}</span>
-                    <span className="text-sm text-slate-500">{poType?.name || "—"}</span>
-                    <span className="text-sm text-slate-500">{moduleNames || "—"}</span>
-                    <span className="text-sm text-slate-500">{costType?.name || "—"}</span>
-                    <span className="text-sm text-slate-500">
-                      {po.po_received_date || "—"}
-                    </span>
-                  </div>
-                  <span className="flex shrink-0 items-center gap-3">
-                    <span className="font-medium tabular-nums text-slate-900">
-                      {formatPaise(poGrossById.get(po.id) ?? 0)}
-                    </span>
-                    {canEdit && existingPoById.get(po.id) && (
-                      <EditPoButton po={existingPoById.get(po.id)!} {...poFormOptions} />
-                    )}
-                  </span>
-                </summary>
+            // Renewal/Expiry date = this PO's earliest upcoming renewal (year-2
+            // projection), which is when the year-1 term expires. Computed from
+            // the site's go-live date; "—" until go-live is stamped.
+            const nextRenewalIso =
+              renewalsByPo.get(po.id)?.[0]?.renewalDate ?? null;
 
-                <div className="border-t border-slate-100 px-4 py-3">
+            return (
+              <PoTableRow
+                key={po.id}
+                poNumber={po.po_number}
+                statusLabel={poType?.name ?? null}
+                product={moduleNames}
+                type={costType?.name || "—"}
+                date={formatDisplayDate(nextRenewalIso)}
+                amount={formatPaise(poGrossById.get(po.id) ?? 0)}
+                colSpan={7}
+                actions={
+                  canEdit && existingPoById.get(po.id) ? (
+                    <EditPoButton po={existingPoById.get(po.id)!} {...poFormOptions} />
+                  ) : null
+                }
+              >
+                <div>
                   <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                     <div>
                       <dt className="text-xs uppercase tracking-wide text-slate-500">
@@ -886,9 +910,11 @@ export default async function SitePage({
                     paymentTermsOptions={renewalPaymentTermsOptions}
                   />
                 </div>
-              </details>
+              </PoTableRow>
             );
           })}
+            </tbody>
+          </table>
         </div>
       )}
 
