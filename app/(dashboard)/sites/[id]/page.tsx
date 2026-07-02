@@ -1080,10 +1080,16 @@ export default async function SitePage({
           title="Implementation"
           description="Scope, stages, and go-live tracking for this site."
         />
-        <PlaceholderCard
-          title="Customer Usage"
-          description="Usage health per module, imported from Hipla's own systems."
-        />
+        <Link
+          href={`/sites/${site.id}/usage`}
+          className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        >
+          <h3 className="text-sm font-medium text-gray-900">Customer Usage</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Weekly entries per module vs expected, and usage health.
+          </p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">Open usage →</p>
+        </Link>
         <PlaceholderCard
           id="support"
           title="Support"

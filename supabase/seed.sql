@@ -362,6 +362,43 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Sample usage data (spec §5.10) for the Acme HQ site, so the Customer
+-- Usage page demos with a real "actual vs expected" trend and a health
+-- category. Expected = 40 entries/week for VMS with host; a few weeks of
+-- actual counts across two sources. Idempotent.
+-- ---------------------------------------------------------------------
+do $$
+declare
+  hq_id uuid;
+  vms_id uuid;
+  src_tab uuid;
+  src_app uuid;
+begin
+  select id into hq_id from sites where name = 'Acme Corp HQ - Mumbai';
+  select id into vms_id from modules where name = 'VMS with host';
+  select id into src_tab from entry_sources where name = 'VMS Tab';
+  select id into src_app from entry_sources where name = 'Dashboard/app';
+
+  if hq_id is not null and vms_id is not null
+     and not exists (select 1 from usage_entries where site_id = hq_id) then
+
+    insert into usage_expectations (site_id, module_id, expected_per_week)
+    values (hq_id, vms_id, 40);
+
+    insert into usage_entries (site_id, module_id, entry_source_id, year, month, week, entry_count, source)
+    values
+      (hq_id, vms_id, src_tab, 2026, 6, 1, 30, 'imported'),
+      (hq_id, vms_id, src_app, 2026, 6, 1, 8, 'imported'),
+      (hq_id, vms_id, src_tab, 2026, 6, 2, 12, 'imported'),
+      (hq_id, vms_id, src_app, 2026, 6, 2, 6, 'imported'),
+      (hq_id, vms_id, src_tab, 2026, 6, 3, 18, 'imported'),
+      (hq_id, vms_id, src_app, 2026, 6, 3, 9, 'imported'),
+      (hq_id, vms_id, src_tab, 2026, 6, 4, 22, 'imported'),
+      (hq_id, vms_id, src_app, 2026, 6, 4, 11, 'imported');
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- First admin account. Pre-provisioned so Priyanka can log in once auth
 -- is wired up; auth_user_id is linked automatically on first sign-in
 -- (see app/auth/callback/route.ts).
