@@ -7,6 +7,7 @@ import { AddSiteButton } from "@/app/(dashboard)/organizations/[id]/site-form";
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { PoTableRow } from "./po-table";
 import { SiteMetaCard } from "./site-meta-card";
+import { SiteStickyNav, type NavSection } from "./site-sticky-nav";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
@@ -112,12 +113,17 @@ function SummaryCard({
 function PlaceholderCard({
   title,
   description,
+  id,
 }: {
   title: string;
   description: string;
+  id?: string;
 }) {
   return (
-    <div className="rounded-lg border border-dashed border-slate-200 bg-white p-4">
+    <div
+      id={id}
+      className="scroll-mt-24 rounded-lg border border-dashed border-slate-200 bg-white p-4"
+    >
       <h3 className="text-sm font-medium text-gray-900">{title}</h3>
       <p className="mt-1 text-sm text-slate-400">{description}</p>
       <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-300">
@@ -569,8 +575,33 @@ export default async function SitePage({
       ? "No upcoming renewals"
       : null;
 
+  // Anchor targets for the sticky sub-header nav (ids match the section markup).
+  const navSections: NavSection[] = [
+    { id: "overview", label: "Overview" },
+    { id: "addresses", label: "Addresses" },
+    { id: "pos", label: "POs" },
+    { id: "licenses", label: "Licenses" },
+    { id: "implementation", label: "Implementation" },
+    { id: "support", label: "Support" },
+    { id: "contacts", label: "Contacts" },
+    { id: "hardware", label: "Hardware" },
+  ];
+
   return (
     <div>
+      <SiteStickyNav
+        orgName={
+          organization?.brand_name || organization?.legal_name || "Organizations"
+        }
+        orgHref={
+          organization && !orgIsSingleSite
+            ? `/organizations/${organization.id}`
+            : "/organizations"
+        }
+        siteName={site.name}
+        status={site.status}
+        sections={navSections}
+      />
       {organization && (
         <Link
           href={orgIsSingleSite ? "/organizations" : `/organizations/${organization.id}`}
@@ -606,6 +637,7 @@ export default async function SitePage({
         )}
       </div>
 
+      <div id="overview" className="scroll-mt-24">
       <SiteMetaCard
         organizationId={orgId ?? ""}
         siteId={id}
@@ -632,8 +664,12 @@ export default async function SitePage({
           addressShipping: toAddressFields(site.address_shipping),
         }}
       />
+      </div>
 
-      <h2 className="mt-8 text-lg font-serif font-semibold text-gray-900">
+      <h2
+        id="addresses"
+        className="mt-8 scroll-mt-24 text-lg font-serif font-semibold text-gray-900"
+      >
         Addresses
       </h2>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -642,7 +678,10 @@ export default async function SitePage({
         <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
 
-      <div className="mt-8 flex items-center justify-between">
+      <div
+        id="pos"
+        className="mt-8 flex scroll-mt-24 items-center justify-between"
+      >
         <h2 className="text-lg font-serif font-semibold text-gray-900">
           PO &amp; payments
         </h2>
@@ -1027,7 +1066,10 @@ export default async function SitePage({
         </div>
       )}
 
-      <h2 className="mt-8 text-lg font-serif font-semibold text-gray-900">
+      <h2
+        id="licenses"
+        className="mt-8 scroll-mt-24 text-lg font-serif font-semibold text-gray-900"
+      >
         Licenses
       </h2>
       <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
@@ -1054,6 +1096,7 @@ export default async function SitePage({
       </h2>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <PlaceholderCard
+          id="implementation"
           title="Implementation"
           description="Scope, stages, and go-live tracking for this site."
         />
@@ -1062,10 +1105,12 @@ export default async function SitePage({
           description="Usage health per module, imported from Hipla's own systems."
         />
         <PlaceholderCard
+          id="support"
           title="Support"
           description="Ticket volume and topics logged for this site."
         />
         <PlaceholderCard
+          id="contacts"
           title="Customer SPOCs"
           description="Points of contact for this site and its organization."
         />
@@ -1074,6 +1119,7 @@ export default async function SitePage({
           description="Approved changes to this site's implementation scope."
         />
         <PlaceholderCard
+          id="hardware"
           title="Hardware & Replacement"
           description="Devices deployed at this site and their replacement history."
         />
