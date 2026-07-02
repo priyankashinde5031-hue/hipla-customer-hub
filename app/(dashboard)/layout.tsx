@@ -2,6 +2,7 @@ import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageTransition } from "./page-transition";
+import { BackButton } from "./back-button";
 
 const navLinkClass =
   "rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2";
@@ -51,6 +52,7 @@ export default async function DashboardLayout({
       </aside>
 
       <main className="flex-1 px-10 py-8">
+        <BackButton />
         <PageTransition>{children}</PageTransition>
       </main>
     </div>

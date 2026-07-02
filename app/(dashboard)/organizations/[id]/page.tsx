@@ -53,14 +53,7 @@ export default async function OrganizationDetailPage({
 
   return (
     <div>
-      <Link
-        href="/organizations"
-        className="rounded text-sm text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
-      >
-        ← Organizations
-      </Link>
-
-      <h1 className="mt-2 text-2xl font-serif font-semibold tracking-tight text-gray-900">
+      <h1 className="text-2xl font-serif font-semibold tracking-tight text-gray-900">
         {organization.brand_name || organization.legal_name}
       </h1>
       <p className="mt-1 text-sm text-slate-500">
