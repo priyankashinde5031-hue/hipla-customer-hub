@@ -428,7 +428,7 @@ function PoFormDialog({
             </div>
             <div className="overflow-hidden rounded-lg border border-slate-200">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
                   <tr>
                     <th className="px-2 py-1.5 text-left font-medium">Description</th>
                     <th className="px-2 py-1.5 text-right font-medium">Qty</th>
@@ -497,7 +497,7 @@ function PoFormDialog({
                 </tbody>
                 <tfoot className="border-t border-slate-200 bg-slate-50">
                   <tr>
-                    <td colSpan={3} className="px-2 pt-2 text-right text-xs uppercase tracking-wide text-slate-500">
+                    <td colSpan={3} className="px-2 pt-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       Subtotal (goods)
                     </td>
                     <td className="px-2 pt-2 text-right tabular-nums text-slate-600">
@@ -506,7 +506,7 @@ function PoFormDialog({
                     <td />
                   </tr>
                   <tr>
-                    <td colSpan={3} className="px-2 text-right text-xs uppercase tracking-wide text-slate-500">
+                    <td colSpan={3} className="px-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       GST{gstAmountPaise > 0 || gstPercent.trim() ? ` (${gstPercent || "0"}%)` : ""}
                     </td>
                     <td className="px-2 text-right tabular-nums text-slate-600">
@@ -515,10 +515,10 @@ function PoFormDialog({
                     <td />
                   </tr>
                   <tr>
-                    <td colSpan={3} className="px-2 pb-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <td colSpan={3} className="px-2 pb-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       PO total (computed)
                     </td>
-                    <td className="px-2 pb-2 text-right font-semibold tabular-nums text-slate-900">
+                    <td className="px-2 pb-2 text-right font-semibold tabular-nums text-gray-900">
                       {formatRupees(totalPaise + gstAmountPaise)}
                     </td>
                     <td />

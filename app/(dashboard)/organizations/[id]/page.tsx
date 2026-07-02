@@ -56,7 +56,7 @@ export default async function OrganizationDetailPage({
         ← Organizations
       </Link>
 
-      <h1 className="mt-2 text-2xl font-semibold tracking-tight text-slate-900">
+      <h1 className="mt-2 text-2xl font-serif font-semibold tracking-tight text-gray-900">
         {organization.brand_name || organization.legal_name}
       </h1>
       <p className="mt-1 text-sm text-slate-500">
@@ -65,7 +65,7 @@ export default async function OrganizationDetailPage({
       </p>
 
       <div className="mt-8 flex items-center justify-between">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+        <h2 className="text-lg font-serif font-semibold text-gray-900">
           Sites
         </h2>
         {canEdit && (
@@ -85,7 +85,7 @@ export default async function OrganizationDetailPage({
 
       <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
             <tr>
               <th className="px-4 py-3 font-medium">Site</th>
               <th className="px-4 py-3 font-medium">Region</th>
@@ -99,7 +99,7 @@ export default async function OrganizationDetailPage({
                 <td className="px-4 py-3">
                   <Link
                     href={`/sites/${site.id}`}
-                    className="font-medium text-slate-900 hover:text-indigo-600"
+                    className="font-medium text-gray-900 hover:text-indigo-600"
                   >
                     {site.name}
                   </Link>

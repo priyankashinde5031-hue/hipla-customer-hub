@@ -31,7 +31,7 @@ export default async function PaymentTermsPage() {
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">Payment Terms</h1>
+      <h1 className="text-2xl font-serif font-semibold tracking-tight text-gray-900">Payment Terms</h1>
       <p className="mt-1 max-w-2xl text-sm text-slate-500">
         A payment term decides how a Purchase Order is split into invoices — either a
         repeating frequency (e.g. quarterly) multiplied by the contract length, or named

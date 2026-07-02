@@ -91,10 +91,10 @@ function SummaryCard({
       ? "text-red-600"
       : tone === "green"
         ? "text-emerald-700"
-        : "text-slate-900";
+        : "text-gray-900";
   return (
     <div className={`rounded-lg border ${borderClass} bg-white p-3`}>
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
       <p className={`mt-1 text-lg font-semibold tabular-nums ${valueClass}`}>
         {isEmpty ? emptyText ?? "—" : value}
       </p>
@@ -118,7 +118,7 @@ function PlaceholderCard({
 }) {
   return (
     <div className="rounded-lg border border-dashed border-slate-200 bg-white p-4">
-      <h3 className="text-sm font-medium text-slate-900">{title}</h3>
+      <h3 className="text-sm font-medium text-gray-900">{title}</h3>
       <p className="mt-1 text-sm text-slate-400">{description}</p>
       <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-300">
         Coming soon
@@ -158,7 +158,7 @@ function AddressBlock({
 
   return (
     <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
         {label}
       </h3>
       {!hasContent ? (
@@ -582,7 +582,7 @@ export default async function SitePage({
 
       <div className="mt-2 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+          <h1 className="text-2xl font-serif font-semibold tracking-tight text-gray-900">
             {site.name}
           </h1>
           {site.is_hq && (
@@ -633,7 +633,7 @@ export default async function SitePage({
         }}
       />
 
-      <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-500">
+      <h2 className="mt-8 text-lg font-serif font-semibold text-gray-900">
         Addresses
       </h2>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -643,7 +643,7 @@ export default async function SitePage({
       </div>
 
       <div className="mt-8 flex items-center justify-between">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+        <h2 className="text-lg font-serif font-semibold text-gray-900">
           PO &amp; payments
         </h2>
         {canEdit && <AddPoButton {...poFormOptions} />}
@@ -701,7 +701,7 @@ export default async function SitePage({
       ) : (
         <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
           <table className="w-full border-collapse text-left [font-variant-numeric:tabular-nums]">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
               <tr className="border-b border-slate-200">
                 <th className="py-2 pl-2 pr-3 font-medium">PO Number</th>
                 <th className="px-3 py-2 font-medium">Status</th>
@@ -799,25 +799,25 @@ export default async function SitePage({
                 <div>
                   <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                     <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Financial year
                       </dt>
                       <dd className="text-slate-700">{financialYear?.name || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Payment terms
                       </dt>
                       <dd className="text-slate-700">{paymentTerm?.name || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Contract time
                       </dt>
                       <dd className="text-slate-700">{contractTime?.name || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         PO attachment
                       </dt>
                       <dd className="text-slate-700">
@@ -841,14 +841,14 @@ export default async function SitePage({
                     </div>
                   </dl>
 
-                  <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
                     Line items
                   </h3>
                   {(po.po_line_items || []).length === 0 ? (
                     <p className="mt-2 text-sm text-slate-400">No line items recorded.</p>
                   ) : (
                     <table className="mt-2 w-full text-sm">
-                      <thead className="text-xs uppercase tracking-wide text-slate-500">
+                      <thead className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         <tr>
                           <th className="py-1 text-left font-medium">Description</th>
                           <th className="py-1 text-right font-medium">Qty</th>
@@ -866,7 +866,7 @@ export default async function SitePage({
                             <td className="py-1 text-right tabular-nums text-slate-700">
                               {formatPaise(li.unit_price_paise)}
                             </td>
-                            <td className="py-1 text-right tabular-nums text-slate-900">
+                            <td className="py-1 text-right tabular-nums text-gray-900">
                               {formatPaise(li.amount_paise)}
                             </td>
                           </tr>
@@ -874,7 +874,7 @@ export default async function SitePage({
                       </tbody>
                       <tfoot className="border-t border-slate-200">
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs uppercase tracking-wide text-slate-500">
+                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             Subtotal (goods)
                           </td>
                           <td className="py-1 text-right tabular-nums text-slate-600">
@@ -882,7 +882,7 @@ export default async function SitePage({
                           </td>
                         </tr>
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs uppercase tracking-wide text-slate-500">
+                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             GST{po.gst_percent ? ` (${po.gst_percent}%)` : ""}
                           </td>
                           <td className="py-1 text-right tabular-nums text-slate-600">
@@ -890,10 +890,10 @@ export default async function SitePage({
                           </td>
                         </tr>
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             PO total
                           </td>
-                          <td className="py-1 text-right font-semibold tabular-nums text-slate-900">
+                          <td className="py-1 text-right font-semibold tabular-nums text-gray-900">
                             {formatPaise(poGrossById.get(po.id) ?? 0)}
                           </td>
                         </tr>
@@ -902,7 +902,7 @@ export default async function SitePage({
                   )}
 
                   <div className="mt-4 flex items-center justify-between">
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
                       Invoices
                     </h3>
                     {canEdit && (
@@ -931,7 +931,7 @@ export default async function SitePage({
                           >
                             <div className="flex flex-wrap items-baseline justify-between gap-2">
                               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-                                <span className="font-medium text-slate-900">
+                                <span className="font-medium text-gray-900">
                                   {inv.invoice_number}
                                 </span>
                                 <span className="text-slate-500">
@@ -949,10 +949,10 @@ export default async function SitePage({
                                 <span className="text-slate-500">
                                   GST {formatPaise(inv.gst_amount_paise)}
                                 </span>
-                                <span className="font-medium text-slate-900">
+                                <span className="font-medium text-gray-900">
                                   Total {formatPaise(inv.total_paise)}
                                 </span>
-                                <span className="font-medium text-slate-900">
+                                <span className="font-medium text-gray-900">
                                   Balance{" "}
                                   {formatPaise(balance?.balance_paise ?? inv.total_paise)}
                                 </span>
@@ -981,7 +981,7 @@ export default async function SitePage({
 
                             {invPayments.length > 0 && (
                               <table className="mt-2 w-full text-sm">
-                                <thead className="text-xs uppercase tracking-wide text-slate-500">
+                                <thead className="text-xs font-medium uppercase tracking-wide text-gray-500">
                                   <tr>
                                     <th className="py-1 text-left font-medium">Received</th>
                                     <th className="py-1 text-left font-medium">Mode</th>
@@ -997,7 +997,7 @@ export default async function SitePage({
                                       <td className="py-1 text-slate-700">
                                         {p.reference || "—"}
                                       </td>
-                                      <td className="py-1 text-right tabular-nums text-slate-900">
+                                      <td className="py-1 text-right tabular-nums text-gray-900">
                                         {formatPaise(p.amount_paise)}
                                       </td>
                                     </tr>
@@ -1027,7 +1027,7 @@ export default async function SitePage({
         </div>
       )}
 
-      <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-500">
+      <h2 className="mt-8 text-lg font-serif font-semibold text-gray-900">
         Licenses
       </h2>
       <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
@@ -1049,7 +1049,7 @@ export default async function SitePage({
         )}
       </div>
 
-      <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-500">
+      <h2 className="mt-8 text-lg font-serif font-semibold text-gray-900">
         Implementation, usage &amp; support
       </h2>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">

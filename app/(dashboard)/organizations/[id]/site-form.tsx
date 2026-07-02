@@ -66,7 +66,7 @@ function AddressFieldset({
   }
   return (
     <div className="rounded-lg border border-slate-200 p-3">
-      <h4 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <h4 className="text-xs font-medium uppercase tracking-wide text-gray-500">
         {label}
       </h4>
       <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
@@ -205,7 +205,7 @@ export function SiteFormDialog({
 
           <div className="flex items-center justify-between rounded-lg border border-slate-200 p-3">
             <div>
-              <p className="text-sm font-medium text-slate-900">Mark as HQ</p>
+              <p className="text-sm font-medium text-gray-900">Mark as HQ</p>
               <p className="text-xs text-slate-500">
                 The primary office for this organization.
               </p>

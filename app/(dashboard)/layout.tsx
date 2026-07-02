@@ -17,26 +17,26 @@ export default async function DashboardLayout({
   return (
     <div className="flex min-h-screen bg-slate-50">
       <aside className="flex w-56 flex-col border-r border-slate-200 bg-white px-4 py-6">
-        <div className="px-2 text-sm font-semibold tracking-tight text-slate-900">
+        <div className="px-2 text-sm font-semibold tracking-tight text-gray-900">
           Hipla Customer Hub
         </div>
 
         <nav className="mt-8 flex flex-col gap-1">
           <Link
             href="/"
-            className="rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-gray-900"
           >
             Dashboard
           </Link>
           <Link
             href="/organizations"
-            className="rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-gray-900"
           >
             Organizations
           </Link>
           <Link
             href="/settings"
-            className="rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+            className="rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-gray-900"
           >
             Settings
           </Link>

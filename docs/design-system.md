@@ -61,8 +61,8 @@ Two families via `next/font`. No third family, no italics except in empty-state 
 
 | Role | Face | Where |
 |---|---|---|
-| **Display** | Current serif (keep existing — e.g. Source Serif 4 / equivalent) | Page titles, section headings, org/site names only |
-| **Data/UI** | `Inter` (or Geist), `font-feature-settings: "tnum"` for all numerals | Everything else: table cells, metrics, labels, badges, buttons, forms, sidebar |
+| **Display** | `Source Serif 4` via `next/font` (`--font-serif`, Tailwind `font-serif`) | Page titles, section headings, org/site names only |
+| **Data/UI** | `Geist` via `next/font` (`--font-sans`, the default), tabular figures globally (`html { tabular-nums }`) | Everything else: table cells, metrics, labels, badges, buttons, forms, sidebar |
 
 ### Type scale
 

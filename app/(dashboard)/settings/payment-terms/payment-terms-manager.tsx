@@ -376,12 +376,12 @@ export function PaymentTermsManager({
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
-              <TableHead className="text-xs uppercase tracking-wide text-slate-500">Name</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-slate-500">
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500">Name</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500">
                 Schedule
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-slate-500">Status</TableHead>
-              {canEdit && <TableHead className="text-xs uppercase tracking-wide text-slate-500" />}
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500">Status</TableHead>
+              {canEdit && <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500" />}
             </TableRow>
           </TableHeader>
           <TableBody>

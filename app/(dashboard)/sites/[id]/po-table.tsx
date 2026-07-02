@@ -96,7 +96,7 @@ export function PoTableRow({
             >
               <path d="M7 5l6 5-6 5" />
             </svg>
-            <span className="font-medium text-slate-900">{poNumber}</span>
+            <span className="font-medium text-gray-900">{poNumber}</span>
           </span>
         </td>
         <td className="px-3 py-3 align-middle">
@@ -111,7 +111,7 @@ export function PoTableRow({
         <td className="px-3 py-3 align-middle text-sm tabular-nums text-slate-600">
           {date}
         </td>
-        <td className="px-3 py-3 text-right align-middle font-medium tabular-nums text-slate-900">
+        <td className="px-3 py-3 text-right align-middle font-medium tabular-nums text-gray-900">
           {amount}
         </td>
         <td

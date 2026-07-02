@@ -174,7 +174,7 @@ function RenewalCard({
     <details className="group overflow-hidden rounded-md border border-slate-200 bg-white">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-3 py-2.5">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="font-medium text-slate-900">Year {renewal.yearNumber}</span>
+          <span className="font-medium text-gray-900">Year {renewal.yearNumber}</span>
           <span className="text-sm text-slate-500">
             Renewal: {renewal.renewalDate ?? "—"}
           </span>
@@ -378,7 +378,7 @@ export function RenewalsForPo({
 }) {
   return (
     <div className="mt-4">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
         Renewals (Year 2–5 projections)
       </h3>
 

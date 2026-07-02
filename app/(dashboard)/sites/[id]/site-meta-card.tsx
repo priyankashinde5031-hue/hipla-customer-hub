@@ -56,7 +56,7 @@ export function SiteMetaCard({
     <>
       <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4">
         <div className="flex items-center justify-between">
-          <h2 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+          <h2 className="text-xs font-medium uppercase tracking-wide text-gray-500">
             Site details
           </h2>
           {canEdit && (
@@ -73,10 +73,10 @@ export function SiteMetaCard({
         <dl className="mt-4 grid grid-cols-3 gap-x-8 gap-y-4 text-sm">
           {fields.map((f) => (
             <div key={f.label}>
-              <dt className="text-xs uppercase tracking-wide text-slate-500">
+              <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                 {f.label}
               </dt>
-              <dd className="mt-1 text-slate-900">
+              <dd className="mt-1 text-gray-900">
                 {f.empty ? (
                   canEdit ? (
                     <button

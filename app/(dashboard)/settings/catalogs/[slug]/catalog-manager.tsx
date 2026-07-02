@@ -90,15 +90,15 @@ export function CatalogManager({
           <TableHeader>
             <TableRow className="bg-slate-50">
               {catalog.fields.map((field) => (
-                <TableHead key={field.key} className="text-xs uppercase tracking-wide text-slate-500">
+                <TableHead key={field.key} className="text-xs font-medium uppercase tracking-wide text-gray-500">
                   {field.label}
                 </TableHead>
               ))}
               {catalog.hasModuleMapping && (
-                <TableHead className="text-xs uppercase tracking-wide text-slate-500">Modules</TableHead>
+                <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500">Modules</TableHead>
               )}
-              <TableHead className="text-xs uppercase tracking-wide text-slate-500">Status</TableHead>
-              {canEdit && <TableHead className="text-xs uppercase tracking-wide text-slate-500" />}
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500">Status</TableHead>
+              {canEdit && <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500" />}
             </TableRow>
           </TableHeader>
           <TableBody>
