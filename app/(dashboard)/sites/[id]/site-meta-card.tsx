@@ -54,7 +54,7 @@ export function SiteMetaCard({
 
   return (
     <>
-      <div className="mt-6 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="mt-6 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         <div className="flex items-center justify-between">
           <h2 className="text-xs font-medium uppercase tracking-wide text-gray-500">
             Site details
@@ -63,7 +63,7 @@ export function SiteMetaCard({
             <button
               type="button"
               onClick={() => setOpen(true)}
-              className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+              className="rounded text-xs font-medium text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
             >
               Edit
             </button>

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { formatDate } from "@/lib/date";
 import { AddSiteButton } from "./site-form";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -52,7 +53,10 @@ export default async function OrganizationDetailPage({
 
   return (
     <div>
-      <Link href="/organizations" className="text-sm text-indigo-600">
+      <Link
+        href="/organizations"
+        className="rounded text-sm text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
+      >
         ← Organizations
       </Link>
 
@@ -83,7 +87,7 @@ export default async function OrganizationDetailPage({
         </p>
       )}
 
-      <div className="mt-3 overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="mt-3 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
             <tr>
@@ -99,7 +103,7 @@ export default async function OrganizationDetailPage({
                 <td className="px-4 py-3">
                   <Link
                     href={`/sites/${site.id}`}
-                    className="font-medium text-gray-900 hover:text-indigo-600"
+                    className="rounded font-medium text-gray-900 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
                   >
                     {site.name}
                   </Link>
@@ -122,7 +126,7 @@ export default async function OrganizationDetailPage({
                   </span>
                 </td>
                 <td className="px-4 py-3 text-slate-600">
-                  {site.go_live_date || "—"}
+                  {formatDate(site.go_live_date)}
                 </td>
               </tr>
             ))}

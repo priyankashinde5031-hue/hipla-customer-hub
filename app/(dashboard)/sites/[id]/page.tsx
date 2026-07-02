@@ -18,6 +18,7 @@ import {
 } from "./renewals-section";
 import type { PaymentTermSpec } from "@/lib/invoicing";
 import { renewalDate } from "@/lib/renewals";
+import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/date";
 
 const STATUS_STYLES: Record<string, string> = {
   cleared: "bg-emerald-50 text-emerald-700",
@@ -28,27 +29,6 @@ const STATUS_STYLES: Record<string, string> = {
   raised: "bg-slate-100 text-slate-600",
   cancelled: "bg-slate-100 text-slate-400",
 };
-
-// Design system: dates render as "30 Jun 2026", never raw ISO. Parses the
-// stored YYYY-MM-DD without going through Date() (avoids timezone day-shift).
-const MONTH_ABBR = [
-  "Jan", "Feb", "Mar", "Apr", "May", "Jun",
-  "Jul", "Aug", "Sep", "Oct", "Nov", "Dec",
-];
-function formatDisplayDate(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
-  if (!m) return iso;
-  return `${Number(m[3])} ${MONTH_ABBR[Number(m[2]) - 1]} ${m[1]}`;
-}
-
-// "Jan 2027" — month + year only, for the renewal context line.
-function formatMonthYear(iso: string | null | undefined): string {
-  if (!iso) return "—";
-  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
-  if (!m) return iso;
-  return `${MONTH_ABBR[Number(m[2]) - 1]} ${m[1]}`;
-}
 
 function StatusBadge({ status }: { status: string }) {
   return (
@@ -82,7 +62,7 @@ function SummaryCard({
   const isEmpty = value === null;
   const borderClass =
     isEmpty || tone === "default"
-      ? "border-slate-200"
+      ? "border-gray-200"
       : tone === "red"
         ? "border-red-200"
         : "border-emerald-200";
@@ -94,7 +74,7 @@ function SummaryCard({
         ? "text-emerald-700"
         : "text-gray-900";
   return (
-    <div className={`rounded-lg border ${borderClass} bg-white p-3`}>
+    <div className={`rounded-xl border ${borderClass} bg-white p-3 shadow-sm`}>
       <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
       <p className={`mt-1 text-lg font-semibold tabular-nums ${valueClass}`}>
         {isEmpty ? emptyText ?? "—" : value}
@@ -122,7 +102,7 @@ function PlaceholderCard({
   return (
     <div
       id={id}
-      className="scroll-mt-24 rounded-lg border border-dashed border-slate-200 bg-white p-4"
+      className="scroll-mt-24 rounded-xl border border-dashed border-gray-200 bg-white p-4 shadow-sm"
     >
       <h3 className="text-sm font-medium text-gray-900">{title}</h3>
       <p className="mt-1 text-sm text-slate-400">{description}</p>
@@ -163,7 +143,7 @@ function AddressBlock({
     hasContent && Object.keys(address!).every((k) => KNOWN_ADDRESS_KEYS.includes(k));
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
       <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
         {label}
       </h3>
@@ -605,7 +585,7 @@ export default async function SitePage({
       {organization && (
         <Link
           href={orgIsSingleSite ? "/organizations" : `/organizations/${organization.id}`}
-          className="text-sm text-indigo-600"
+          className="rounded text-sm text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
         >
           ← {orgIsSingleSite ? "Organizations" : organization.brand_name || organization.legal_name}
         </Link>
@@ -738,7 +718,7 @@ export default async function SitePage({
           No purchase orders recorded for this site yet.
         </p>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-lg border border-slate-200 bg-white">
+        <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
           <table className="w-full border-collapse text-left [font-variant-numeric:tabular-nums]">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
               <tr className="border-b border-slate-200">
@@ -974,10 +954,10 @@ export default async function SitePage({
                                   {inv.invoice_number}
                                 </span>
                                 <span className="text-slate-500">
-                                  Issued {inv.issue_date || "—"}
+                                  Issued {formatDisplayDate(inv.issue_date)}
                                 </span>
                                 <span className="text-slate-500">
-                                  Due {inv.due_date || "—"}
+                                  Due {formatDisplayDate(inv.due_date)}
                                 </span>
                                 <StatusBadge status={status} />
                               </div>
@@ -1031,7 +1011,7 @@ export default async function SitePage({
                                 <tbody className="divide-y divide-slate-100">
                                   {invPayments.map((p) => (
                                     <tr key={p.id}>
-                                      <td className="py-1 text-slate-700">{p.received_date}</td>
+                                      <td className="py-1 text-slate-700">{formatDisplayDate(p.received_date)}</td>
                                       <td className="py-1 text-slate-700">{p.mode || "—"}</td>
                                       <td className="py-1 text-slate-700">
                                         {p.reference || "—"}
@@ -1072,7 +1052,7 @@ export default async function SitePage({
       >
         Licenses
       </h2>
-      <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
+      <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
         {licenseModules.length === 0 ? (
           <p className="text-sm text-slate-400">
             No modules licensed yet — add a PO covering this site with modules selected.

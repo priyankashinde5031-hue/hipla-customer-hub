@@ -14,7 +14,7 @@ export default function SettingsPage() {
       <div className="mt-6 grid grid-cols-2 gap-4">
         <Link
           href="/settings/payment-terms"
-          className="rounded-lg border border-slate-200 bg-white p-4 hover:border-indigo-300 hover:shadow-sm"
+          className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
         >
           <h2 className="text-sm font-medium text-gray-900">Payment Terms</h2>
           <p className="mt-1 text-xs text-slate-500">
@@ -26,7 +26,7 @@ export default function SettingsPage() {
           <Link
             key={catalog.slug}
             href={`/settings/catalogs/${catalog.slug}`}
-            className="rounded-lg border border-slate-200 bg-white p-4 hover:border-indigo-300 hover:shadow-sm"
+            className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
           >
             <h2 className="text-sm font-medium text-gray-900">{catalog.label}</h2>
             <p className="mt-1 text-xs text-slate-500">{catalog.description}</p>

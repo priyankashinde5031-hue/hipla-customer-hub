@@ -130,3 +130,37 @@
     @apply font-sans tabular-nums;
   }
 }
+
+/* Skeleton shimmer (design-system §5.8): a light sweep over the border-grey
+   base while async sections load. Disabled under prefers-reduced-motion §7. */
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  background-color: #e7e5e0;
+  border-radius: 0.5rem;
+}
+.skeleton::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    rgba(255, 255, 255, 0.6),
+    transparent
+  );
+  animation: skeleton-shimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes skeleton-shimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+  }
+}

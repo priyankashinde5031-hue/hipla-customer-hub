@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPaise } from "@/lib/currency";
+import { formatDate } from "@/lib/date";
 import { deviationPercent } from "@/lib/renewals";
 import {
   updateRenewal,
@@ -176,7 +177,7 @@ function RenewalCard({
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="font-medium text-gray-900">Year {renewal.yearNumber}</span>
           <span className="text-sm text-slate-500">
-            Renewal: {renewal.renewalDate ?? "—"}
+            Renewal: {formatDate(renewal.renewalDate)}
           </span>
           <span className="text-sm text-slate-500">
             Expected: {formatPaise(renewal.expectedValuePaise ?? 0)}
@@ -201,7 +202,7 @@ function RenewalCard({
           <div className="flex flex-col gap-1.5">
             <Label>Renewal date</Label>
             <p className="flex h-8 items-center text-sm text-slate-700">
-              {renewal.renewalDate ?? "—"}
+              {formatDate(renewal.renewalDate)}
             </p>
           </div>
 

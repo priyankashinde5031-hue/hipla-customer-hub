@@ -42,7 +42,7 @@ export default async function OrganizationsPage() {
         </p>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
           <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
             <tr>
@@ -57,7 +57,7 @@ export default async function OrganizationsPage() {
                 <td className="px-4 py-3">
                   <Link
                     href={`/organizations/${org.id}`}
-                    className="font-medium text-gray-900 hover:text-indigo-600"
+                    className="rounded font-medium text-gray-900 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
                   >
                     {org.brand_name || org.legal_name}
                   </Link>

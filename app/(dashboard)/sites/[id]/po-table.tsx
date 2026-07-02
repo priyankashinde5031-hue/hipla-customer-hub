@@ -69,7 +69,7 @@ export function PoTableRow({
   return (
     <>
       <tr
-        className="group cursor-pointer border-b border-slate-100 hover:bg-slate-50"
+        className="group cursor-pointer border-b border-slate-100 hover:bg-slate-50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-indigo-500/50"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         tabIndex={0}

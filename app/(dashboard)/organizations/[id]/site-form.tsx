@@ -3,6 +3,7 @@
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -339,10 +340,10 @@ export function AddSiteButton({
   return (
     <>
       <Button
-        className="bg-indigo-600 text-white hover:bg-indigo-700"
-        size="sm"
+        className="h-9 gap-1.5 bg-indigo-600 px-4 text-sm text-white hover:bg-indigo-700"
         onClick={() => setOpen(true)}
       >
+        <Plus className="size-4" />
         Add site
       </Button>
       {open && (
