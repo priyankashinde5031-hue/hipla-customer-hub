@@ -126,6 +126,16 @@ export const CATALOGS: CatalogConfig[] = [
       { key: "months", label: "Length in months", type: "number", required: true },
     ],
   },
+  {
+    slug: "internal-teams",
+    table: "internal_teams",
+    label: "Internal Teams",
+    singular: "Internal Team",
+    description:
+      "Hipla teams that can own a customer relationship — the “internal owner” on a Spox contact.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
 ];
 
 export function getCatalogBySlug(slug: string): CatalogConfig | undefined {
