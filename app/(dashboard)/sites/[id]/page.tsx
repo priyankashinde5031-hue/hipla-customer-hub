@@ -40,6 +40,14 @@ function formatDisplayDate(iso: string | null | undefined): string {
   return `${Number(m[3])} ${MONTH_ABBR[Number(m[2]) - 1]} ${m[1]}`;
 }
 
+// "Jan 2027" — month + year only, for the renewal context line.
+function formatMonthYear(iso: string | null | undefined): string {
+  if (!iso) return "—";
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso.trim());
+  if (!m) return iso;
+  return `${MONTH_ABBR[Number(m[2]) - 1]} ${m[1]}`;
+}
+
 function StatusBadge({ status }: { status: string }) {
   return (
     <span
@@ -52,25 +60,46 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// A metric card: label, primary value, and a secondary context line. Pass
+// value={null} for money that is ₹0 only because no invoices exist yet — the
+// card then shows emptyText in muted grey instead of a misleading ₹0.00.
+// tone tints the border + value (red = money owed, green = fully collected).
 function SummaryCard({
   label,
   value,
+  context,
+  emptyText,
   tone = "default",
 }: {
   label: string;
-  value: string;
-  tone?: "default" | "amber";
+  value: string | null;
+  context?: string | null;
+  emptyText?: string;
+  tone?: "default" | "red" | "green";
 }) {
+  const isEmpty = value === null;
+  const borderClass =
+    isEmpty || tone === "default"
+      ? "border-slate-200"
+      : tone === "red"
+        ? "border-red-200"
+        : "border-emerald-200";
+  const valueClass = isEmpty
+    ? "text-slate-400"
+    : tone === "red"
+      ? "text-red-600"
+      : tone === "green"
+        ? "text-emerald-700"
+        : "text-slate-900";
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
+    <div className={`rounded-lg border ${borderClass} bg-white p-3`}>
       <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p
-        className={`mt-1 text-lg font-semibold tabular-nums ${
-          tone === "amber" ? "text-amber-700" : "text-slate-900"
-        }`}
-      >
-        {value}
+      <p className={`mt-1 text-lg font-semibold tabular-nums ${valueClass}`}>
+        {isEmpty ? emptyText ?? "—" : value}
       </p>
+      {!isEmpty && context ? (
+        <p className="mt-0.5 text-xs text-slate-500">{context}</p>
+      ) : null}
     </div>
   );
 }
@@ -479,6 +508,52 @@ export default async function SitePage({
   // the breadcrumb to the list instead of bouncing the user in a loop.
   const orgIsSingleSite = (orgSitesRes.data?.length ?? 0) <= 1;
 
+  // Secondary context lines for the summary cards. All derived on read (CLAUDE.md).
+  // Cancelled invoices are excluded from the count, matching the money rollups.
+  const activeInvoiceCount = (invoices || []).filter(
+    (inv) => balancesByInvoice.get(inv.id)?.computed_status !== "cancelled",
+  ).length;
+  const hasInvoices = activeInvoiceCount > 0;
+  const overdueCount = (invoiceBalances || []).filter(
+    (b) => b.computed_status === "overdue",
+  ).length;
+  const collectedPct =
+    totalInvoicedPaise > 0
+      ? Math.round((totalCollectedPaise / totalInvoicedPaise) * 100)
+      : 0;
+  const fullyCollected = hasInvoices && outstandingPaise === 0;
+
+  // PO count context = new vs renewal split, read from PO Type (spec App. A.4).
+  // POs have no lifecycle "status" field, so we don't claim one (e.g. "active").
+  const renewalPoCount = purchaseOrders.filter((po) => {
+    const t = Array.isArray(po.po_type) ? po.po_type[0] : po.po_type;
+    return /^renewal/i.test(t?.name ?? "");
+  }).length;
+  const newPoCount = purchaseOrders.length - renewalPoCount;
+  const poCountContext =
+    purchaseOrders.length === 0
+      ? null
+      : [
+          newPoCount > 0 ? `${newPoCount} new` : null,
+          renewalPoCount > 0 ? `${renewalPoCount} renewal` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
+  // Earliest still-upcoming renewal across this site's POs → "Next renewal: Jan 2027".
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const nextRenewalIso =
+    [...renewalsByPo.values()]
+      .flat()
+      .map((r) => r.renewalDate)
+      .filter((d): d is string => d !== null && d >= todayIso)
+      .sort()[0] ?? null;
+  const poValueContext = nextRenewalIso
+    ? `Next renewal: ${formatMonthYear(nextRenewalIso)}`
+    : purchaseOrders.length > 0
+      ? "No upcoming renewals"
+      : null;
+
   return (
     <div>
       {organization && (
@@ -574,14 +649,47 @@ export default async function SitePage({
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <SummaryCard label="Purchase orders" value={String(purchaseOrders.length)} />
-        <SummaryCard label="Total PO value" value={formatPaise(totalPoValuePaise)} />
-        <SummaryCard label="Total invoiced" value={formatPaise(totalInvoicedPaise)} />
-        <SummaryCard label="Total collected" value={formatPaise(totalCollectedPaise)} />
+        <SummaryCard
+          label="Purchase orders"
+          value={String(purchaseOrders.length)}
+          context={poCountContext}
+        />
+        <SummaryCard
+          label="Total PO value"
+          value={formatPaise(totalPoValuePaise)}
+          context={poValueContext}
+        />
+        <SummaryCard
+          label="Total invoiced"
+          value={hasInvoices ? formatPaise(totalInvoicedPaise) : null}
+          emptyText="No invoices yet"
+          context={
+            hasInvoices
+              ? `${activeInvoiceCount} invoice${activeInvoiceCount === 1 ? "" : "s"}`
+              : null
+          }
+        />
+        <SummaryCard
+          label="Total collected"
+          value={hasInvoices ? formatPaise(totalCollectedPaise) : null}
+          emptyText="No invoices yet"
+          context={hasInvoices ? `Collected ${collectedPct}% of invoiced` : null}
+          tone={fullyCollected ? "green" : "default"}
+        />
         <SummaryCard
           label="Outstanding"
-          value={formatPaise(outstandingPaise)}
-          tone={outstandingPaise > 0 ? "amber" : "default"}
+          value={hasInvoices ? formatPaise(outstandingPaise) : null}
+          emptyText="No invoices yet"
+          context={
+            !hasInvoices
+              ? null
+              : outstandingPaise > 0
+                ? overdueCount > 0
+                  ? `${overdueCount} invoice${overdueCount === 1 ? "" : "s"} overdue`
+                  : "Payment pending"
+                : "Fully collected"
+          }
+          tone={outstandingPaise > 0 ? "red" : fullyCollected ? "green" : "default"}
         />
       </div>
 
