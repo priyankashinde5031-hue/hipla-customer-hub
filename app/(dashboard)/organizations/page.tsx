@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
+import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { AddOrganizationButton } from "./organization-form";
 
 const STATUS_STYLES: Record<string, string> = {
   active: "bg-green-50 text-green-700",
@@ -9,19 +11,30 @@ const STATUS_STYLES: Record<string, string> = {
 
 export default async function OrganizationsPage() {
   const supabase = await createClient();
-  const { data: organizations, error } = await supabase
-    .from("organizations")
-    .select("id, legal_name, brand_name, industry, status")
-    .order("legal_name");
+  const [{ data: organizations, error }, user, { data: owners }] = await Promise.all([
+    supabase
+      .from("organizations")
+      .select("id, legal_name, brand_name, industry, status")
+      .order("legal_name"),
+    getCurrentInternalUser(),
+    supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
+  ]);
+
+  const canEdit = canEditCatalogs(user);
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-        Organizations
-      </h1>
-      <p className="mt-1 text-sm text-slate-500">
-        Every customer HQ we work with.
-      </p>
+      <div className="flex items-center justify-between">
+        <div>
+          <h1 className="text-2xl font-serif font-semibold tracking-tight text-gray-900">
+            Organizations
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            Every customer HQ we work with.
+          </p>
+        </div>
+        {canEdit && <AddOrganizationButton ownerOptions={owners ?? []} />}
+      </div>
 
       {error && (
         <p className="mt-6 text-sm text-red-600">
@@ -29,9 +42,9 @@ export default async function OrganizationsPage() {
         </p>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
             <tr>
               <th className="px-4 py-3 font-medium">Organization</th>
               <th className="px-4 py-3 font-medium">Industry</th>
@@ -44,7 +57,7 @@ export default async function OrganizationsPage() {
                 <td className="px-4 py-3">
                   <Link
                     href={`/organizations/${org.id}`}
-                    className="font-medium text-slate-900 hover:text-indigo-600"
+                    className="rounded font-medium text-gray-900 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
                   >
                     {org.brand_name || org.legal_name}
                   </Link>

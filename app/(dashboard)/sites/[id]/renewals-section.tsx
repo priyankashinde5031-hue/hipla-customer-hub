@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPaise } from "@/lib/currency";
+import { formatDate } from "@/lib/date";
 import { deviationPercent } from "@/lib/renewals";
 import {
   updateRenewal,
@@ -174,9 +175,9 @@ function RenewalCard({
     <details className="group overflow-hidden rounded-md border border-slate-200 bg-white">
       <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-3 py-2.5">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="font-medium text-slate-900">Year {renewal.yearNumber}</span>
+          <span className="font-medium text-gray-900">Year {renewal.yearNumber}</span>
           <span className="text-sm text-slate-500">
-            Renewal: {renewal.renewalDate ?? "—"}
+            Renewal: {formatDate(renewal.renewalDate)}
           </span>
           <span className="text-sm text-slate-500">
             Expected: {formatPaise(renewal.expectedValuePaise ?? 0)}
@@ -201,7 +202,7 @@ function RenewalCard({
           <div className="flex flex-col gap-1.5">
             <Label>Renewal date</Label>
             <p className="flex h-8 items-center text-sm text-slate-700">
-              {renewal.renewalDate ?? "—"}
+              {formatDate(renewal.renewalDate)}
             </p>
           </div>
 
@@ -378,7 +379,7 @@ export function RenewalsForPo({
 }) {
   return (
     <div className="mt-4">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
         Renewals (Year 2–5 projections)
       </h3>
 

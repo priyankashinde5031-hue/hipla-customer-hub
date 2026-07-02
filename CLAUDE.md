@@ -4,6 +4,8 @@ You are the coding agent building the **Hipla Customer Hub**. This file is your 
 
 **Source of truth:** `docs/hipla-customer-hub-spec.md`. That document wins over everything — over this file if they ever conflict, over the old Emergent prototype, and over your own assumptions. If something isn't in the spec, do not invent it (see "When unsure").
 
+**UI source of truth:** `docs/design-system.md`. Read it before building or modifying any UI. Every color, font, spacing, and component decision must derive from it — semantic tokens only, no raw hex or raw Tailwind palette classes in components. If a new pattern is needed, extend that file first, then implement.
+
 **Where things live in the spec (read carefully — section numbers matter):**
 - The **schema / data model** is described across **§5 (Functional specification, module by module)** and the **entity-relationship diagram in Appendix B**. There is no single "DDL" section; build the tables from §5's field lists + Appendix B's relationships.
 - **§6 is the dashboard & reporting** (the computed metrics), not the schema.

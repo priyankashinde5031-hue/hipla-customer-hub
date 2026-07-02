@@ -217,7 +217,7 @@ function GenerateDialog({
 
             <div className="overflow-hidden rounded-lg border border-slate-200">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
                   <tr>
                     <th className="px-2 py-1.5 text-left font-medium">Invoice / stage</th>
                     <th className="px-2 py-1.5 text-right font-medium">Amount (₹)</th>
@@ -271,10 +271,10 @@ function GenerateDialog({
                 </tbody>
                 <tfoot className="border-t border-slate-200 bg-slate-50">
                   <tr>
-                    <td className="px-2 py-1.5 text-right text-xs uppercase tracking-wide text-slate-500">
+                    <td className="px-2 py-1.5 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       Total
                     </td>
-                    <td className="px-2 py-1.5 text-right font-medium tabular-nums text-slate-900">
+                    <td className="px-2 py-1.5 text-right font-medium tabular-nums text-gray-900">
                       {formatRupees(totals.amount)}
                     </td>
                     <td className="px-2 py-1.5 text-right tabular-nums text-slate-600">

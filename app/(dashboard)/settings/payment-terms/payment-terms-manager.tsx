@@ -2,6 +2,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -364,24 +365,25 @@ export function PaymentTermsManager({
       {canEdit && (
         <div className="mb-4 flex justify-end">
           <Button
-            className="bg-indigo-600 text-white hover:bg-indigo-700"
+            className="h-9 gap-1.5 bg-indigo-600 px-4 text-sm text-white hover:bg-indigo-700"
             onClick={() => setDialog("new")}
           >
+            <Plus className="size-4" />
             Add payment term
           </Button>
         </div>
       )}
 
-      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white">
+      <div className="overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         <Table>
           <TableHeader>
             <TableRow className="bg-slate-50">
-              <TableHead className="text-xs uppercase tracking-wide text-slate-500">Name</TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-slate-500">
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500">Name</TableHead>
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500">
                 Schedule
               </TableHead>
-              <TableHead className="text-xs uppercase tracking-wide text-slate-500">Status</TableHead>
-              {canEdit && <TableHead className="text-xs uppercase tracking-wide text-slate-500" />}
+              <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500">Status</TableHead>
+              {canEdit && <TableHead className="text-xs font-medium uppercase tracking-wide text-gray-500" />}
             </TableRow>
           </TableHeader>
           <TableBody>

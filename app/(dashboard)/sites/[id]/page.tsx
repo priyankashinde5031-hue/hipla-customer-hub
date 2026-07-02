@@ -3,7 +3,11 @@ import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { AddSiteButton } from "@/app/(dashboard)/organizations/[id]/site-form";
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
+import { PoTableRow } from "./po-table";
+import { SiteMetaCard } from "./site-meta-card";
+import { SiteStickyNav, type NavSection } from "./site-sticky-nav";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
@@ -14,6 +18,7 @@ import {
 } from "./renewals-section";
 import type { PaymentTermSpec } from "@/lib/invoicing";
 import { renewalDate } from "@/lib/renewals";
+import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/date";
 
 const STATUS_STYLES: Record<string, string> = {
   cleared: "bg-emerald-50 text-emerald-700",
@@ -37,27 +42,93 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
+// A metric card: label, primary value, and a secondary context line. Pass
+// value={null} for money that is ₹0 only because no invoices exist yet — the
+// card then shows emptyText in muted grey instead of a misleading ₹0.00.
+// tone tints the border + value (red = money owed, green = fully collected).
 function SummaryCard({
   label,
   value,
+  context,
+  emptyText,
   tone = "default",
 }: {
   label: string;
-  value: string;
-  tone?: "default" | "amber";
+  value: string | null;
+  context?: string | null;
+  emptyText?: string;
+  tone?: "default" | "red" | "green";
+}) {
+  const isEmpty = value === null;
+  const borderClass =
+    isEmpty || tone === "default"
+      ? "border-gray-200"
+      : tone === "red"
+        ? "border-red-200"
+        : "border-emerald-200";
+  const valueClass = isEmpty
+    ? "text-slate-400"
+    : tone === "red"
+      ? "text-red-600"
+      : tone === "green"
+        ? "text-emerald-700"
+        : "text-gray-900";
+  return (
+    <div className={`rounded-xl border ${borderClass} bg-white p-3 shadow-sm`}>
+      <p className="text-xs font-medium uppercase tracking-wide text-gray-500">{label}</p>
+      <p className={`mt-1 text-lg font-semibold tabular-nums ${valueClass}`}>
+        {isEmpty ? emptyText ?? "—" : value}
+      </p>
+      {!isEmpty && context ? (
+        <p className="mt-0.5 text-xs text-slate-500">{context}</p>
+      ) : null}
+    </div>
+  );
+}
+
+// Modules 5–9 of the spec (Implementation, Usage, Support, SPOCs, Scope
+// Changes, Hardware) aren't built yet — CLAUDE.md says not to start them
+// until told. These render the Site 360 layout now; real data lands
+// module-by-module later, same as PO & Invoices did.
+function PlaceholderCard({
+  title,
+  description,
+  id,
+}: {
+  title: string;
+  description: string;
+  id?: string;
 }) {
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-3">
-      <p className="text-xs uppercase tracking-wide text-slate-500">{label}</p>
-      <p
-        className={`mt-1 text-lg font-semibold tabular-nums ${
-          tone === "amber" ? "text-amber-700" : "text-slate-900"
-        }`}
-      >
-        {value}
+    <div
+      id={id}
+      className="scroll-mt-24 rounded-xl border border-dashed border-gray-200 bg-white p-4 shadow-sm"
+    >
+      <h3 className="text-sm font-medium text-gray-900">{title}</h3>
+      <p className="mt-1 text-sm text-slate-400">{description}</p>
+      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-300">
+        Coming soon
       </p>
     </div>
   );
+}
+
+// Known keys from the Add Site form (line1, line2, city, state, pincode),
+// rendered as a normal postal address. Any other/legacy keys fall back to a
+// plain key: value list so nothing is silently dropped.
+const KNOWN_ADDRESS_KEYS = ["line1", "line2", "city", "state", "pincode"];
+
+// Stored address jsonb → the 5-string shape the edit form expects. Unknown or
+// missing keys become "" so the form's inputs stay controlled.
+function toAddressFields(address: Record<string, unknown> | null) {
+  const a = address ?? {};
+  return {
+    line1: String(a.line1 ?? ""),
+    line2: String(a.line2 ?? ""),
+    city: String(a.city ?? ""),
+    state: String(a.state ?? ""),
+    pincode: String(a.pincode ?? ""),
+  };
 }
 
 function AddressBlock({
@@ -68,18 +139,34 @@ function AddressBlock({
   address: Record<string, unknown> | null;
 }) {
   const hasContent = address && Object.keys(address).length > 0;
+  const isKnownShape =
+    hasContent && Object.keys(address!).every((k) => KNOWN_ADDRESS_KEYS.includes(k));
 
   return (
-    <div className="rounded-lg border border-slate-200 bg-white p-4">
-      <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+    <div className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
         {label}
       </h3>
-      {hasContent ? (
-        <pre className="mt-2 whitespace-pre-wrap text-sm text-slate-700">
-          {JSON.stringify(address, null, 2)}
-        </pre>
-      ) : (
+      {!hasContent ? (
         <p className="mt-2 text-sm text-slate-400">Not recorded yet.</p>
+      ) : isKnownShape ? (
+        <div className="mt-2 text-sm text-slate-700">
+          {Boolean(address!.line1) && <p>{String(address!.line1)}</p>}
+          {Boolean(address!.line2) && <p>{String(address!.line2)}</p>}
+          <p>
+            {[address!.city, address!.state].filter(Boolean).join(", ")}
+            {address!.pincode ? ` — ${address!.pincode}` : ""}
+          </p>
+        </div>
+      ) : (
+        <dl className="mt-2 space-y-1 text-sm text-slate-700">
+          {Object.entries(address!).map(([key, value]) => (
+            <div key={key} className="flex gap-1">
+              <dt className="capitalize text-slate-500">{key}:</dt>
+              <dd>{String(value)}</dd>
+            </div>
+          ))}
+        </dl>
       )}
     </div>
   );
@@ -97,6 +184,7 @@ export default async function SitePage({
     .from("sites")
     .select(
       `id, name, is_hq, status, region, timezone, gst_number, go_live_date,
+       onboarding_owner_id, cs_owner_id,
        address_site, address_billing, address_shipping,
        organization:organizations ( id, legal_name, brand_name ),
        onboarding_owner:internal_users!sites_onboarding_owner_id_fkey ( name, email ),
@@ -142,6 +230,20 @@ export default async function SitePage({
     .filter((po): po is NonNullable<typeof po> => Boolean(po));
 
   const poIds = purchaseOrders.map((po) => po.id);
+
+  // Licenses card = distinct modules covered by this site's POs. Derived on
+  // read from po_modules rather than hand-tracked (CLAUDE.md: reference/usage
+  // data isn't hand-totaled where it can be computed).
+  const licenseModules = Array.from(
+    new Map(
+      purchaseOrders
+        .flatMap((po) => po.po_modules || [])
+        .map((pm) => {
+          const mod = Array.isArray(pm.module) ? pm.module[0] : pm.module;
+          return [pm.module_id, mod?.name ?? "—"] as const;
+        }),
+    ).entries(),
+  ).sort((a, b) => a[1].localeCompare(b[1]));
 
   const { data: poTotals } = poIds.length
     ? await supabase.from("po_totals").select("po_id, po_value_paise").in("po_id", poIds)
@@ -272,6 +374,7 @@ export default async function SitePage({
     contractTimesRes,
     modulesRes,
     orgSitesRes,
+    ownersRes,
   ] = await Promise.all([
     getCurrentInternalUser(),
     supabase.from("po_types").select("id, name").eq("active", true).order("name"),
@@ -287,6 +390,7 @@ export default async function SitePage({
     orgId
       ? supabase.from("sites").select("id, name").eq("organization_id", orgId).order("name")
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
+    supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
   ]);
 
   const canEdit = canEditCatalogs(user);
@@ -401,73 +505,151 @@ export default async function SitePage({
     ]),
   );
 
+  // A single-site org's detail page redirects straight back here, so send
+  // the breadcrumb to the list instead of bouncing the user in a loop.
+  const orgIsSingleSite = (orgSitesRes.data?.length ?? 0) <= 1;
+
+  // Secondary context lines for the summary cards. All derived on read (CLAUDE.md).
+  // Cancelled invoices are excluded from the count, matching the money rollups.
+  const activeInvoiceCount = (invoices || []).filter(
+    (inv) => balancesByInvoice.get(inv.id)?.computed_status !== "cancelled",
+  ).length;
+  const hasInvoices = activeInvoiceCount > 0;
+  const overdueCount = (invoiceBalances || []).filter(
+    (b) => b.computed_status === "overdue",
+  ).length;
+  const collectedPct =
+    totalInvoicedPaise > 0
+      ? Math.round((totalCollectedPaise / totalInvoicedPaise) * 100)
+      : 0;
+  const fullyCollected = hasInvoices && outstandingPaise === 0;
+
+  // PO count context = new vs renewal split, read from PO Type (spec App. A.4).
+  // POs have no lifecycle "status" field, so we don't claim one (e.g. "active").
+  const renewalPoCount = purchaseOrders.filter((po) => {
+    const t = Array.isArray(po.po_type) ? po.po_type[0] : po.po_type;
+    return /^renewal/i.test(t?.name ?? "");
+  }).length;
+  const newPoCount = purchaseOrders.length - renewalPoCount;
+  const poCountContext =
+    purchaseOrders.length === 0
+      ? null
+      : [
+          newPoCount > 0 ? `${newPoCount} new` : null,
+          renewalPoCount > 0 ? `${renewalPoCount} renewal` : null,
+        ]
+          .filter(Boolean)
+          .join(" · ");
+
+  // Earliest still-upcoming renewal across this site's POs → "Next renewal: Jan 2027".
+  const todayIso = new Date().toISOString().slice(0, 10);
+  const nextRenewalIso =
+    [...renewalsByPo.values()]
+      .flat()
+      .map((r) => r.renewalDate)
+      .filter((d): d is string => d !== null && d >= todayIso)
+      .sort()[0] ?? null;
+  const poValueContext = nextRenewalIso
+    ? `Next renewal: ${formatMonthYear(nextRenewalIso)}`
+    : purchaseOrders.length > 0
+      ? "No upcoming renewals"
+      : null;
+
+  // Anchor targets for the sticky sub-header nav (ids match the section markup).
+  const navSections: NavSection[] = [
+    { id: "overview", label: "Overview" },
+    { id: "addresses", label: "Addresses" },
+    { id: "pos", label: "POs" },
+    { id: "licenses", label: "Licenses" },
+    { id: "implementation", label: "Implementation" },
+    { id: "support", label: "Support" },
+    { id: "contacts", label: "Contacts" },
+    { id: "hardware", label: "Hardware" },
+  ];
+
   return (
     <div>
+      <SiteStickyNav
+        orgName={
+          organization?.brand_name || organization?.legal_name || "Organizations"
+        }
+        orgHref={
+          organization && !orgIsSingleSite
+            ? `/organizations/${organization.id}`
+            : "/organizations"
+        }
+        siteName={site.name}
+        status={site.status}
+        sections={navSections}
+      />
       {organization && (
         <Link
-          href={`/organizations/${organization.id}`}
-          className="text-sm text-indigo-600"
+          href={orgIsSingleSite ? "/organizations" : `/organizations/${organization.id}`}
+          className="rounded text-sm text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
         >
-          ← {organization.brand_name || organization.legal_name}
+          ← {orgIsSingleSite ? "Organizations" : organization.brand_name || organization.legal_name}
         </Link>
       )}
 
-      <div className="mt-2 flex items-center gap-2">
-        <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
-          {site.name}
-        </h1>
-        {site.is_hq && (
-          <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
-            HQ
+      <div className="mt-2 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h1 className="text-2xl font-serif font-semibold tracking-tight text-gray-900">
+            {site.name}
+          </h1>
+          {site.is_hq && (
+            <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
+              HQ
+            </span>
+          )}
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
+            {site.status}
           </span>
+        </div>
+        {/* Always available here too — a single-site org never shows its own
+            sites list (it redirects straight into this page), so this is
+            the only way to add a second site without a dead end. */}
+        {canEdit && orgId && (
+          <AddSiteButton
+            organizationId={orgId}
+            suggestHq={false}
+            ownerOptions={ownersRes.data ?? []}
+          />
         )}
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium capitalize text-slate-600">
-          {site.status}
-        </span>
       </div>
 
-      <dl className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            Region
-          </dt>
-          <dd className="mt-1 text-slate-900">{site.region || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            Timezone
-          </dt>
-          <dd className="mt-1 text-slate-900">{site.timezone || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            GST number
-          </dt>
-          <dd className="mt-1 text-slate-900">{site.gst_number || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            Go-live date
-          </dt>
-          <dd className="mt-1 text-slate-900">{site.go_live_date || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            Onboarding owner
-          </dt>
-          <dd className="mt-1 text-slate-900">
-            {onboardingOwner?.name || "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            CS owner
-          </dt>
-          <dd className="mt-1 text-slate-900">{csOwner?.name || "—"}</dd>
-        </div>
-      </dl>
+      <div id="overview" className="scroll-mt-24">
+      <SiteMetaCard
+        organizationId={orgId ?? ""}
+        siteId={id}
+        canEdit={canEdit}
+        ownerOptions={ownersRes.data ?? []}
+        regionDisplay={site.region || ""}
+        timezoneDisplay={site.timezone || ""}
+        gstDisplay={site.gst_number || ""}
+        goLiveDisplay={site.go_live_date ? formatDisplayDate(site.go_live_date) : ""}
+        onboardingOwnerDisplay={onboardingOwner?.name || ""}
+        csOwnerDisplay={csOwner?.name || ""}
+        initial={{
+          name: site.name,
+          isHq: site.is_hq,
+          status: site.status,
+          region: site.region ?? "",
+          timezone: site.timezone ?? "",
+          gstNumber: site.gst_number ?? "",
+          goLiveDate: site.go_live_date ?? "",
+          onboardingOwnerId: site.onboarding_owner_id ?? "",
+          csOwnerId: site.cs_owner_id ?? "",
+          addressSite: toAddressFields(site.address_site),
+          addressBilling: toAddressFields(site.address_billing),
+          addressShipping: toAddressFields(site.address_shipping),
+        }}
+      />
+      </div>
 
-      <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-500">
+      <h2
+        id="addresses"
+        className="mt-8 scroll-mt-24 text-lg font-serif font-semibold text-gray-900"
+      >
         Addresses
       </h2>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -476,22 +658,58 @@ export default async function SitePage({
         <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
 
-      <div className="mt-10 flex items-center justify-between">
-        <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
+      <div
+        id="pos"
+        className="mt-8 flex scroll-mt-24 items-center justify-between"
+      >
+        <h2 className="text-lg font-serif font-semibold text-gray-900">
           PO &amp; payments
         </h2>
         {canEdit && <AddPoButton {...poFormOptions} />}
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-5">
-        <SummaryCard label="Purchase orders" value={String(purchaseOrders.length)} />
-        <SummaryCard label="Total PO value" value={formatPaise(totalPoValuePaise)} />
-        <SummaryCard label="Total invoiced" value={formatPaise(totalInvoicedPaise)} />
-        <SummaryCard label="Total collected" value={formatPaise(totalCollectedPaise)} />
+        <SummaryCard
+          label="Purchase orders"
+          value={String(purchaseOrders.length)}
+          context={poCountContext}
+        />
+        <SummaryCard
+          label="Total PO value"
+          value={formatPaise(totalPoValuePaise)}
+          context={poValueContext}
+        />
+        <SummaryCard
+          label="Total invoiced"
+          value={hasInvoices ? formatPaise(totalInvoicedPaise) : null}
+          emptyText="No invoices yet"
+          context={
+            hasInvoices
+              ? `${activeInvoiceCount} invoice${activeInvoiceCount === 1 ? "" : "s"}`
+              : null
+          }
+        />
+        <SummaryCard
+          label="Total collected"
+          value={hasInvoices ? formatPaise(totalCollectedPaise) : null}
+          emptyText="No invoices yet"
+          context={hasInvoices ? `Collected ${collectedPct}% of invoiced` : null}
+          tone={fullyCollected ? "green" : "default"}
+        />
         <SummaryCard
           label="Outstanding"
-          value={formatPaise(outstandingPaise)}
-          tone={outstandingPaise > 0 ? "amber" : "default"}
+          value={hasInvoices ? formatPaise(outstandingPaise) : null}
+          emptyText="No invoices yet"
+          context={
+            !hasInvoices
+              ? null
+              : outstandingPaise > 0
+                ? overdueCount > 0
+                  ? `${overdueCount} invoice${overdueCount === 1 ? "" : "s"} overdue`
+                  : "Payment pending"
+                : "Fully collected"
+          }
+          tone={outstandingPaise > 0 ? "red" : fullyCollected ? "green" : "default"}
         />
       </div>
 
@@ -500,7 +718,20 @@ export default async function SitePage({
           No purchase orders recorded for this site yet.
         </p>
       ) : (
-        <div className="mt-4 space-y-3">
+        <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+          <table className="w-full border-collapse text-left [font-variant-numeric:tabular-nums]">
+            <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
+              <tr className="border-b border-slate-200">
+                <th className="py-2 pl-2 pr-3 font-medium">PO Number</th>
+                <th className="px-3 py-2 font-medium">Status</th>
+                <th className="px-3 py-2 font-medium">Product</th>
+                <th className="px-3 py-2 font-medium">Type</th>
+                <th className="px-3 py-2 font-medium">Renewal / Expiry</th>
+                <th className="px-3 py-2 text-right font-medium">Amount</th>
+                <th className="py-2 pl-3 pr-2 text-right font-medium">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
           {purchaseOrders.map((po) => {
             const poType = Array.isArray(po.po_type) ? po.po_type[0] : po.po_type;
             const costType = Array.isArray(po.cost_type)
@@ -562,53 +793,50 @@ export default async function SitePage({
               })),
             };
 
-            return (
-              <details
-                key={po.id}
-                className="group overflow-hidden rounded-lg border border-slate-200 bg-white"
-              >
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-4 py-3">
-                  <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                    <span className="font-medium text-slate-900">{po.po_number}</span>
-                    <span className="text-sm text-slate-500">{poType?.name || "—"}</span>
-                    <span className="text-sm text-slate-500">{moduleNames || "—"}</span>
-                    <span className="text-sm text-slate-500">{costType?.name || "—"}</span>
-                    <span className="text-sm text-slate-500">
-                      {po.po_received_date || "—"}
-                    </span>
-                  </div>
-                  <span className="flex shrink-0 items-center gap-3">
-                    <span className="font-medium tabular-nums text-slate-900">
-                      {formatPaise(poGrossById.get(po.id) ?? 0)}
-                    </span>
-                    {canEdit && existingPoById.get(po.id) && (
-                      <EditPoButton po={existingPoById.get(po.id)!} {...poFormOptions} />
-                    )}
-                  </span>
-                </summary>
+            // Renewal/Expiry date = this PO's earliest upcoming renewal (year-2
+            // projection), which is when the year-1 term expires. Computed from
+            // the site's go-live date; "—" until go-live is stamped.
+            const nextRenewalIso =
+              renewalsByPo.get(po.id)?.[0]?.renewalDate ?? null;
 
-                <div className="border-t border-slate-100 px-4 py-3">
+            return (
+              <PoTableRow
+                key={po.id}
+                poNumber={po.po_number}
+                statusLabel={poType?.name ?? null}
+                product={moduleNames}
+                type={costType?.name || "—"}
+                date={formatDisplayDate(nextRenewalIso)}
+                amount={formatPaise(poGrossById.get(po.id) ?? 0)}
+                colSpan={7}
+                actions={
+                  canEdit && existingPoById.get(po.id) ? (
+                    <EditPoButton po={existingPoById.get(po.id)!} {...poFormOptions} />
+                  ) : null
+                }
+              >
+                <div>
                   <dl className="mb-4 grid grid-cols-2 gap-x-6 gap-y-2 text-sm sm:grid-cols-3">
                     <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Financial year
                       </dt>
                       <dd className="text-slate-700">{financialYear?.name || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Payment terms
                       </dt>
                       <dd className="text-slate-700">{paymentTerm?.name || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         Contract time
                       </dt>
                       <dd className="text-slate-700">{contractTime?.name || "—"}</dd>
                     </div>
                     <div>
-                      <dt className="text-xs uppercase tracking-wide text-slate-500">
+                      <dt className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         PO attachment
                       </dt>
                       <dd className="text-slate-700">
@@ -632,14 +860,14 @@ export default async function SitePage({
                     </div>
                   </dl>
 
-                  <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                  <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
                     Line items
                   </h3>
                   {(po.po_line_items || []).length === 0 ? (
                     <p className="mt-2 text-sm text-slate-400">No line items recorded.</p>
                   ) : (
                     <table className="mt-2 w-full text-sm">
-                      <thead className="text-xs uppercase tracking-wide text-slate-500">
+                      <thead className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         <tr>
                           <th className="py-1 text-left font-medium">Description</th>
                           <th className="py-1 text-right font-medium">Qty</th>
@@ -657,7 +885,7 @@ export default async function SitePage({
                             <td className="py-1 text-right tabular-nums text-slate-700">
                               {formatPaise(li.unit_price_paise)}
                             </td>
-                            <td className="py-1 text-right tabular-nums text-slate-900">
+                            <td className="py-1 text-right tabular-nums text-gray-900">
                               {formatPaise(li.amount_paise)}
                             </td>
                           </tr>
@@ -665,7 +893,7 @@ export default async function SitePage({
                       </tbody>
                       <tfoot className="border-t border-slate-200">
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs uppercase tracking-wide text-slate-500">
+                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             Subtotal (goods)
                           </td>
                           <td className="py-1 text-right tabular-nums text-slate-600">
@@ -673,7 +901,7 @@ export default async function SitePage({
                           </td>
                         </tr>
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs uppercase tracking-wide text-slate-500">
+                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             GST{po.gst_percent ? ` (${po.gst_percent}%)` : ""}
                           </td>
                           <td className="py-1 text-right tabular-nums text-slate-600">
@@ -681,10 +909,10 @@ export default async function SitePage({
                           </td>
                         </tr>
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             PO total
                           </td>
-                          <td className="py-1 text-right font-semibold tabular-nums text-slate-900">
+                          <td className="py-1 text-right font-semibold tabular-nums text-gray-900">
                             {formatPaise(poGrossById.get(po.id) ?? 0)}
                           </td>
                         </tr>
@@ -693,7 +921,7 @@ export default async function SitePage({
                   )}
 
                   <div className="mt-4 flex items-center justify-between">
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
                       Invoices
                     </h3>
                     {canEdit && (
@@ -722,14 +950,14 @@ export default async function SitePage({
                           >
                             <div className="flex flex-wrap items-baseline justify-between gap-2">
                               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-                                <span className="font-medium text-slate-900">
+                                <span className="font-medium text-gray-900">
                                   {inv.invoice_number}
                                 </span>
                                 <span className="text-slate-500">
-                                  Issued {inv.issue_date || "—"}
+                                  Issued {formatDisplayDate(inv.issue_date)}
                                 </span>
                                 <span className="text-slate-500">
-                                  Due {inv.due_date || "—"}
+                                  Due {formatDisplayDate(inv.due_date)}
                                 </span>
                                 <StatusBadge status={status} />
                               </div>
@@ -740,10 +968,10 @@ export default async function SitePage({
                                 <span className="text-slate-500">
                                   GST {formatPaise(inv.gst_amount_paise)}
                                 </span>
-                                <span className="font-medium text-slate-900">
+                                <span className="font-medium text-gray-900">
                                   Total {formatPaise(inv.total_paise)}
                                 </span>
-                                <span className="font-medium text-slate-900">
+                                <span className="font-medium text-gray-900">
                                   Balance{" "}
                                   {formatPaise(balance?.balance_paise ?? inv.total_paise)}
                                 </span>
@@ -772,7 +1000,7 @@ export default async function SitePage({
 
                             {invPayments.length > 0 && (
                               <table className="mt-2 w-full text-sm">
-                                <thead className="text-xs uppercase tracking-wide text-slate-500">
+                                <thead className="text-xs font-medium uppercase tracking-wide text-gray-500">
                                   <tr>
                                     <th className="py-1 text-left font-medium">Received</th>
                                     <th className="py-1 text-left font-medium">Mode</th>
@@ -783,12 +1011,12 @@ export default async function SitePage({
                                 <tbody className="divide-y divide-slate-100">
                                   {invPayments.map((p) => (
                                     <tr key={p.id}>
-                                      <td className="py-1 text-slate-700">{p.received_date}</td>
+                                      <td className="py-1 text-slate-700">{formatDisplayDate(p.received_date)}</td>
                                       <td className="py-1 text-slate-700">{p.mode || "—"}</td>
                                       <td className="py-1 text-slate-700">
                                         {p.reference || "—"}
                                       </td>
-                                      <td className="py-1 text-right tabular-nums text-slate-900">
+                                      <td className="py-1 text-right tabular-nums text-gray-900">
                                         {formatPaise(p.amount_paise)}
                                       </td>
                                     </tr>
@@ -810,11 +1038,72 @@ export default async function SitePage({
                     paymentTermsOptions={renewalPaymentTermsOptions}
                   />
                 </div>
-              </details>
+              </PoTableRow>
             );
           })}
+            </tbody>
+          </table>
         </div>
       )}
+
+      <h2
+        id="licenses"
+        className="mt-8 scroll-mt-24 text-lg font-serif font-semibold text-gray-900"
+      >
+        Licenses
+      </h2>
+      <div className="mt-3 rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+        {licenseModules.length === 0 ? (
+          <p className="text-sm text-slate-400">
+            No modules licensed yet — add a PO covering this site with modules selected.
+          </p>
+        ) : (
+          <div className="flex flex-wrap gap-2">
+            {licenseModules.map(([moduleId, name]) => (
+              <span
+                key={moduleId}
+                className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700"
+              >
+                {name}
+              </span>
+            ))}
+          </div>
+        )}
+      </div>
+
+      <h2 className="mt-8 text-lg font-serif font-semibold text-gray-900">
+        Implementation, usage &amp; support
+      </h2>
+      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <PlaceholderCard
+          id="implementation"
+          title="Implementation"
+          description="Scope, stages, and go-live tracking for this site."
+        />
+        <PlaceholderCard
+          title="Customer Usage"
+          description="Usage health per module, imported from Hipla's own systems."
+        />
+        <PlaceholderCard
+          id="support"
+          title="Support"
+          description="Ticket volume and topics logged for this site."
+        />
+        <PlaceholderCard
+          id="contacts"
+          title="Customer SPOCs"
+          description="Points of contact for this site and its organization."
+        />
+        <PlaceholderCard
+          title="Scope Changes"
+          description="Approved changes to this site's implementation scope."
+        />
+        <PlaceholderCard
+          id="hardware"
+          title="Hardware & Replacement"
+          description="Devices deployed at this site and their replacement history."
+        />
+      </div>
     </div>
   );
 }

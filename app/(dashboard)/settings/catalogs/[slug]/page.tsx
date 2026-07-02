@@ -45,7 +45,7 @@ export default async function CatalogPage({
 
   return (
     <div>
-      <h1 className="text-2xl font-semibold tracking-tight text-slate-900">
+      <h1 className="text-2xl font-serif font-semibold tracking-tight text-gray-900">
         {catalog.label}
       </h1>
       <p className="mt-1 text-sm text-slate-500">{catalog.description}</p>

@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
+import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -428,7 +429,7 @@ function PoFormDialog({
             </div>
             <div className="overflow-hidden rounded-lg border border-slate-200">
               <table className="w-full text-sm">
-                <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+                <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
                   <tr>
                     <th className="px-2 py-1.5 text-left font-medium">Description</th>
                     <th className="px-2 py-1.5 text-right font-medium">Qty</th>
@@ -497,7 +498,7 @@ function PoFormDialog({
                 </tbody>
                 <tfoot className="border-t border-slate-200 bg-slate-50">
                   <tr>
-                    <td colSpan={3} className="px-2 pt-2 text-right text-xs uppercase tracking-wide text-slate-500">
+                    <td colSpan={3} className="px-2 pt-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       Subtotal (goods)
                     </td>
                     <td className="px-2 pt-2 text-right tabular-nums text-slate-600">
@@ -506,7 +507,7 @@ function PoFormDialog({
                     <td />
                   </tr>
                   <tr>
-                    <td colSpan={3} className="px-2 text-right text-xs uppercase tracking-wide text-slate-500">
+                    <td colSpan={3} className="px-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       GST{gstAmountPaise > 0 || gstPercent.trim() ? ` (${gstPercent || "0"}%)` : ""}
                     </td>
                     <td className="px-2 text-right tabular-nums text-slate-600">
@@ -515,10 +516,10 @@ function PoFormDialog({
                     <td />
                   </tr>
                   <tr>
-                    <td colSpan={3} className="px-2 pb-2 text-right text-xs font-medium uppercase tracking-wide text-slate-500">
+                    <td colSpan={3} className="px-2 pb-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       PO total (computed)
                     </td>
-                    <td className="px-2 pb-2 text-right font-semibold tabular-nums text-slate-900">
+                    <td className="px-2 pb-2 text-right font-semibold tabular-nums text-gray-900">
                       {formatRupees(totalPaise + gstAmountPaise)}
                     </td>
                     <td />
@@ -564,10 +565,10 @@ export function AddPoButton(props: SharedProps) {
   return (
     <>
       <Button
-        className="bg-indigo-600 text-white hover:bg-indigo-700"
-        size="sm"
+        className="h-9 gap-1.5 bg-indigo-600 px-4 text-sm text-white hover:bg-indigo-700"
         onClick={() => setOpen(true)}
       >
+        <Plus className="size-4" />
         Add PO
       </Button>
       {open && (
@@ -592,7 +593,7 @@ export function EditPoButton({ po, ...props }: SharedProps & { po: ExistingPo })
           e.preventDefault();
           setOpen(true);
         }}
-        className="text-xs font-medium text-indigo-600 hover:text-indigo-700"
+        className="rounded text-xs font-medium text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
       >
         Edit
       </button>
