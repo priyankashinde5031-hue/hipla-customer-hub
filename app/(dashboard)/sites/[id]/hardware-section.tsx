@@ -61,34 +61,29 @@ export function HardwareSection({
   );
 
   return (
-    <section id="hardware" className="mt-8 scroll-mt-24">
-      <div className="flex items-center justify-between">
-        <h2 className="text-lg font-serif font-semibold text-gray-900">
-          Hardware &amp; Replacement
-        </h2>
-        {canEdit && (
-          <div className="flex items-center gap-2">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              onClick={() => setReplaceTarget("pick")}
-              disabled={activeDevices.length === 0}
-            >
-              <RefreshCw className="size-4" />
-              Replace Device
-            </Button>
-            <Button
-              size="sm"
-              className="gap-1.5 bg-indigo-600 text-white hover:bg-indigo-700"
-              onClick={() => setShowAdd(true)}
-            >
-              <Plus className="size-4" />
-              Add Hardware
-            </Button>
-          </div>
-        )}
-      </div>
+    <section className="mt-6">
+      {canEdit && (
+        <div className="flex items-center justify-end gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5"
+            onClick={() => setReplaceTarget("pick")}
+            disabled={activeDevices.length === 0}
+          >
+            <RefreshCw className="size-4" />
+            Replace Device
+          </Button>
+          <Button
+            size="sm"
+            className="gap-1.5 bg-indigo-600 text-white hover:bg-indigo-700"
+            onClick={() => setShowAdd(true)}
+          >
+            <Plus className="size-4" />
+            Add Hardware
+          </Button>
+        </div>
+      )}
 
       {/* Summary cards (spec §4.2) */}
       <div className="mt-3 grid grid-cols-2 gap-3 sm:max-w-md">

@@ -99,7 +99,7 @@ export async function addDevice(
   if (error || !data) return { error: error?.message ?? "Could not add the device." };
 
   await writeAudit(supabase, user!.id, "create", "device", data.id, null, row);
-  revalidatePath(`/sites/${siteId}`);
+  revalidatePath(`/sites/${siteId}/hardware`);
   return {};
 }
 
@@ -149,7 +149,7 @@ export async function deleteDevice(
     before as Record<string, unknown>,
     { ...(before as Record<string, unknown>), is_deleted: true },
   );
-  revalidatePath(`/sites/${siteId}`);
+  revalidatePath(`/sites/${siteId}/hardware`);
   return {};
 }
 
@@ -221,6 +221,6 @@ export async function replaceDevice(
     new_device_id: newDeviceId,
     approved_by: input.approvedBy,
   });
-  revalidatePath(`/sites/${siteId}`);
+  revalidatePath(`/sites/${siteId}/hardware`);
   return {};
 }
