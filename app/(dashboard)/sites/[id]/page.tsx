@@ -6,6 +6,7 @@ import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user
 import { AddSiteButton } from "@/app/(dashboard)/organizations/[id]/site-form";
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { PoTableRow } from "./po-table";
+import { SiteMetaCard } from "./site-meta-card";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
@@ -131,6 +132,19 @@ function PlaceholderCard({
 // plain key: value list so nothing is silently dropped.
 const KNOWN_ADDRESS_KEYS = ["line1", "line2", "city", "state", "pincode"];
 
+// Stored address jsonb → the 5-string shape the edit form expects. Unknown or
+// missing keys become "" so the form's inputs stay controlled.
+function toAddressFields(address: Record<string, unknown> | null) {
+  const a = address ?? {};
+  return {
+    line1: String(a.line1 ?? ""),
+    line2: String(a.line2 ?? ""),
+    city: String(a.city ?? ""),
+    state: String(a.state ?? ""),
+    pincode: String(a.pincode ?? ""),
+  };
+}
+
 function AddressBlock({
   label,
   address,
@@ -184,6 +198,7 @@ export default async function SitePage({
     .from("sites")
     .select(
       `id, name, is_hq, status, region, timezone, gst_number, go_live_date,
+       onboarding_owner_id, cs_owner_id,
        address_site, address_billing, address_shipping,
        organization:organizations ( id, legal_name, brand_name ),
        onboarding_owner:internal_users!sites_onboarding_owner_id_fkey ( name, email ),
@@ -591,46 +606,32 @@ export default async function SitePage({
         )}
       </div>
 
-      <dl className="mt-6 grid grid-cols-2 gap-4 text-sm sm:grid-cols-4">
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            Region
-          </dt>
-          <dd className="mt-1 text-slate-900">{site.region || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            Timezone
-          </dt>
-          <dd className="mt-1 text-slate-900">{site.timezone || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            GST number
-          </dt>
-          <dd className="mt-1 text-slate-900">{site.gst_number || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            Go-live date
-          </dt>
-          <dd className="mt-1 text-slate-900">{site.go_live_date || "—"}</dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            Onboarding owner
-          </dt>
-          <dd className="mt-1 text-slate-900">
-            {onboardingOwner?.name || "—"}
-          </dd>
-        </div>
-        <div>
-          <dt className="text-xs uppercase tracking-wide text-slate-500">
-            CS owner
-          </dt>
-          <dd className="mt-1 text-slate-900">{csOwner?.name || "—"}</dd>
-        </div>
-      </dl>
+      <SiteMetaCard
+        organizationId={orgId ?? ""}
+        siteId={id}
+        canEdit={canEdit}
+        ownerOptions={ownersRes.data ?? []}
+        regionDisplay={site.region || ""}
+        timezoneDisplay={site.timezone || ""}
+        gstDisplay={site.gst_number || ""}
+        goLiveDisplay={site.go_live_date ? formatDisplayDate(site.go_live_date) : ""}
+        onboardingOwnerDisplay={onboardingOwner?.name || ""}
+        csOwnerDisplay={csOwner?.name || ""}
+        initial={{
+          name: site.name,
+          isHq: site.is_hq,
+          status: site.status,
+          region: site.region ?? "",
+          timezone: site.timezone ?? "",
+          gstNumber: site.gst_number ?? "",
+          goLiveDate: site.go_live_date ?? "",
+          onboardingOwnerId: site.onboarding_owner_id ?? "",
+          csOwnerId: site.cs_owner_id ?? "",
+          addressSite: toAddressFields(site.address_site),
+          addressBilling: toAddressFields(site.address_billing),
+          addressShipping: toAddressFields(site.address_shipping),
+        }}
+      />
 
       <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-500">
         Addresses
@@ -641,7 +642,7 @@ export default async function SitePage({
         <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
 
-      <div className="mt-10 flex items-center justify-between">
+      <div className="mt-8 flex items-center justify-between">
         <h2 className="text-sm font-medium uppercase tracking-wide text-slate-500">
           PO &amp; payments
         </h2>
@@ -1026,7 +1027,7 @@ export default async function SitePage({
         </div>
       )}
 
-      <h2 className="mt-10 text-sm font-medium uppercase tracking-wide text-slate-500">
+      <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-500">
         Licenses
       </h2>
       <div className="mt-3 rounded-lg border border-slate-200 bg-white p-4">
@@ -1048,7 +1049,7 @@ export default async function SitePage({
         )}
       </div>
 
-      <h2 className="mt-10 text-sm font-medium uppercase tracking-wide text-slate-500">
+      <h2 className="mt-8 text-sm font-medium uppercase tracking-wide text-slate-500">
         Implementation, usage &amp; support
       </h2>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">

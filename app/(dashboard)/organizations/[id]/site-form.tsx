@@ -17,11 +17,29 @@ import {
 } from "@/components/ui/dialog";
 import {
   createSite,
+  updateSite,
   type SiteFormInput,
   type AddressFieldsInput,
 } from "./site-actions";
 
 type Option = { id: string; name: string };
+
+// Prefill values for edit mode. Mirrors the form's own fields (all as the
+// string/boolean shapes the inputs use).
+export type SiteInitial = {
+  name: string;
+  isHq: boolean;
+  status: SiteFormInput["status"];
+  region: string;
+  timezone: string;
+  gstNumber: string;
+  goLiveDate: string;
+  onboardingOwnerId: string;
+  csOwnerId: string;
+  addressSite: AddressFieldsInput;
+  addressBilling: AddressFieldsInput;
+  addressShipping: AddressFieldsInput;
+};
 
 const inputClass =
   "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -84,32 +102,47 @@ function AddressFieldset({
   );
 }
 
-function SiteFormDialog({
+export function SiteFormDialog({
   open,
   onClose,
   organizationId,
-  suggestHq,
+  suggestHq = false,
   ownerOptions,
+  mode = "create",
+  siteId,
+  initial,
 }: {
   open: boolean;
   onClose: () => void;
   organizationId: string;
-  suggestHq: boolean;
+  suggestHq?: boolean;
   ownerOptions: Option[];
+  mode?: "create" | "edit";
+  siteId?: string;
+  initial?: SiteInitial;
 }) {
   const router = useRouter();
-  const [name, setName] = useState("");
-  const [isHq, setIsHq] = useState(suggestHq);
-  const [status, setStatus] = useState<SiteFormInput["status"]>("prospect");
-  const [region, setRegion] = useState("");
-  const [timezone, setTimezone] = useState("");
-  const [gstNumber, setGstNumber] = useState("");
-  const [goLiveDate, setGoLiveDate] = useState("");
-  const [onboardingOwnerId, setOnboardingOwnerId] = useState("");
-  const [csOwnerId, setCsOwnerId] = useState("");
-  const [addressSite, setAddressSite] = useState(blankAddress);
-  const [addressBilling, setAddressBilling] = useState(blankAddress);
-  const [addressShipping, setAddressShipping] = useState(blankAddress);
+  const isEdit = mode === "edit";
+  const [name, setName] = useState(initial?.name ?? "");
+  const [isHq, setIsHq] = useState(initial?.isHq ?? suggestHq);
+  const [status, setStatus] = useState<SiteFormInput["status"]>(
+    initial?.status ?? "prospect",
+  );
+  const [region, setRegion] = useState(initial?.region ?? "");
+  const [timezone, setTimezone] = useState(initial?.timezone ?? "");
+  const [gstNumber, setGstNumber] = useState(initial?.gstNumber ?? "");
+  const [goLiveDate, setGoLiveDate] = useState(initial?.goLiveDate ?? "");
+  const [onboardingOwnerId, setOnboardingOwnerId] = useState(
+    initial?.onboardingOwnerId ?? "",
+  );
+  const [csOwnerId, setCsOwnerId] = useState(initial?.csOwnerId ?? "");
+  const [addressSite, setAddressSite] = useState(initial?.addressSite ?? blankAddress);
+  const [addressBilling, setAddressBilling] = useState(
+    initial?.addressBilling ?? blankAddress,
+  );
+  const [addressShipping, setAddressShipping] = useState(
+    initial?.addressShipping ?? blankAddress,
+  );
   const [isPending, startTransition] = useTransition();
 
   function submit() {
@@ -129,14 +162,21 @@ function SiteFormDialog({
     };
 
     startTransition(async () => {
-      const result = await createSite(organizationId, input);
+      const result =
+        isEdit && siteId
+          ? await updateSite(siteId, input)
+          : await createSite(organizationId, input);
       if (result.error) {
         toast.error(result.error);
         return;
       }
-      toast.success(`${name} created.`);
+      toast.success(isEdit ? `${name} saved.` : `${name} created.`);
       onClose();
-      router.push(`/sites/${result.siteId}`);
+      if (isEdit) {
+        router.refresh();
+      } else {
+        router.push(`/sites/${result.siteId}`);
+      }
     });
   }
 
@@ -144,7 +184,7 @@ function SiteFormDialog({
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
       <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-2xl">
         <DialogHeader>
-          <DialogTitle>Add site</DialogTitle>
+          <DialogTitle>{isEdit ? "Edit site" : "Add site"}</DialogTitle>
           <DialogDescription>
             One office of this organization. Almost everything operational hangs off the site.
           </DialogDescription>
@@ -272,7 +312,13 @@ function SiteFormDialog({
             onClick={submit}
             disabled={isPending || !name.trim()}
           >
-            {isPending ? "Creating…" : "Create site"}
+            {isPending
+              ? isEdit
+                ? "Saving…"
+                : "Creating…"
+              : isEdit
+                ? "Save changes"
+                : "Create site"}
           </Button>
         </DialogFooter>
       </DialogContent>

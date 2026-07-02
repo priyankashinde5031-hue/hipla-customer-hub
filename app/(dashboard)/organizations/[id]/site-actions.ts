@@ -90,3 +90,69 @@ export async function createSite(
   revalidatePath(`/organizations/${organizationId}`);
   return { siteId: inserted.id as string };
 }
+
+export async function updateSite(
+  siteId: string,
+  input: SiteFormInput,
+): Promise<ActionResult> {
+  const user = await getCurrentInternalUser();
+  if (!canEditSites(user)) {
+    return { error: "You don't have permission to edit sites." };
+  }
+
+  const name = input.name?.trim();
+  if (!name) return { error: "Site name is required." };
+
+  const supabase = await createClient();
+
+  // Snapshot the current row for the audit `before` and to know which org
+  // page to revalidate. Missing row → someone else deleted it; bail cleanly.
+  const { data: before } = await supabase
+    .from("sites")
+    .select(
+      `organization_id, name, is_hq, status, region, timezone, gst_number,
+       go_live_date, onboarding_owner_id, cs_owner_id,
+       address_site, address_billing, address_shipping`,
+    )
+    .eq("id", siteId)
+    .maybeSingle();
+
+  if (!before) return { error: "Site not found." };
+
+  const row = {
+    name,
+    is_hq: input.isHq,
+    status: input.status,
+    region: input.region?.trim() || null,
+    timezone: input.timezone?.trim() || null,
+    gst_number: input.gstNumber?.trim() || null,
+    go_live_date: input.goLiveDate || null,
+    onboarding_owner_id: input.onboardingOwnerId || null,
+    cs_owner_id: input.csOwnerId || null,
+    address_site: addressToJson(input.addressSite),
+    address_billing: addressToJson(input.addressBilling),
+    address_shipping: addressToJson(input.addressShipping),
+  };
+
+  const { error } = await supabase.from("sites").update(row).eq("id", siteId);
+
+  if (error) {
+    return { error: error.message };
+  }
+
+  // Append-only audit entry with before/after (CLAUDE.md: audit scope changes).
+  await supabase.from("audit_log").insert({
+    actor_id: user!.id,
+    action: "update",
+    entity_type: "site",
+    entity_id: siteId,
+    before,
+    after: row,
+  });
+
+  revalidatePath(`/sites/${siteId}`);
+  if (before.organization_id) {
+    revalidatePath(`/organizations/${before.organization_id}`);
+  }
+  return { siteId };
+}
