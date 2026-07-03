@@ -8,6 +8,7 @@ import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { PoTableRow } from "./po-table";
 import { SiteMetaCard } from "./site-meta-card";
 import { SiteStickyNav, type NavSection } from "./site-sticky-nav";
+import { ScopeChangesCard, type ScopeChangeRow } from "./scope-changes-view";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
@@ -313,6 +314,48 @@ export default async function SitePage({
     : null;
   const payments = paymentsQuery?.data ?? [];
 
+  // Active Spox for the card summary (spec §4.1) — role breakdown at a glance.
+  const { data: activeSpox } = await supabase
+    .from("spox")
+    .select("role")
+    .eq("site_id", site.id)
+    .eq("status", "active");
+  const spoxRoleLabels: Record<string, string> = {
+    decision_maker: "Decision Maker",
+    solution_approver: "Solution Approver",
+    middle_user_manager: "Middle User/Manager",
+    end_user: "End User",
+  };
+  const spoxRoleOrder = [
+    "decision_maker",
+    "solution_approver",
+    "middle_user_manager",
+    "end_user",
+  ];
+  const spoxCounts = (activeSpox || []).reduce<Record<string, number>>((acc, s) => {
+    acc[s.role] = (acc[s.role] || 0) + 1;
+    return acc;
+  }, {});
+  const spoxTotal = activeSpox?.length ?? 0;
+  const spoxBreakdown = spoxRoleOrder
+    .filter((r) => spoxCounts[r])
+    .map((r) => `${spoxCounts[r]} ${spoxRoleLabels[r]}`)
+    .join(" · ");
+
+  // Scope changes (spec §5.7) — site-scoped, live rows only (soft-deleted
+  // rows stay in the table but never surface). Approver + requester names are
+  // resolved via the internal_users FKs.
+  const { data: scopeChangesRaw } = await supabase
+    .from("scope_changes")
+    .select(
+      `id, description, change_date, impact, approver_id, status, created_at,
+       approver:internal_users!scope_changes_approver_id_fkey ( name ),
+       created_by_user:internal_users!scope_changes_created_by_fkey ( name )`,
+    )
+    .eq("site_id", site.id)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
   const invoicesByPo = new Map<string, typeof invoices>();
   for (const inv of invoices || []) {
     if (!inv.po_id) continue;
@@ -555,6 +598,22 @@ export default async function SitePage({
       ? "No upcoming renewals"
       : null;
 
+  // Scope-change rows for the modal. Approver options reuse the active
+  // internal-users list already loaded for PO owners (ownersRes).
+  const flattenName = (v: { name: string } | { name: string }[] | null) =>
+    (Array.isArray(v) ? v[0] : v)?.name ?? null;
+  const scopeChanges: ScopeChangeRow[] = (scopeChangesRaw || []).map((sc) => ({
+    id: sc.id,
+    description: sc.description,
+    changeDate: sc.change_date,
+    impact: sc.impact,
+    approverId: sc.approver_id,
+    approverName: flattenName(sc.approver),
+    status: sc.status,
+    createdByName: flattenName(sc.created_by_user),
+    createdAt: sc.created_at,
+  }));
+
   // Anchor targets for the sticky sub-header nav (ids match the section markup).
   const navSections: NavSection[] = [
     { id: "overview", label: "Overview" },
@@ -565,6 +624,7 @@ export default async function SitePage({
     { id: "support", label: "Support" },
     { id: "contacts", label: "Contacts" },
     { id: "hardware", label: "Hardware" },
+    { id: "scope", label: "Scope" },
   ];
 
   return (
@@ -1080,28 +1140,51 @@ export default async function SitePage({
           title="Implementation"
           description="Scope, stages, and go-live tracking for this site."
         />
-        <PlaceholderCard
-          title="Customer Usage"
-          description="Usage health per module, imported from Hipla's own systems."
-        />
+        <Link
+          href={`/sites/${site.id}/usage`}
+          className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        >
+          <h3 className="text-sm font-medium text-gray-900">Customer Usage</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Weekly entries per module vs expected, and usage health.
+          </p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">Open usage →</p>
+        </Link>
         <PlaceholderCard
           id="support"
           title="Support"
           description="Ticket volume and topics logged for this site."
         />
-        <PlaceholderCard
+        <Link
+          href={`/sites/${site.id}/spox`}
           id="contacts"
-          title="Customer SPOCs"
-          description="Points of contact for this site and its organization."
-        />
-        <PlaceholderCard
-          title="Scope Changes"
-          description="Approved changes to this site's implementation scope."
-        />
-        <PlaceholderCard
+          className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        >
+          <h3 className="text-sm font-medium text-gray-900">Spox</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {spoxTotal === 0
+              ? "Customer contacts by role, internal owners, and replacement history."
+              : `${spoxTotal} active${spoxBreakdown ? ` · ${spoxBreakdown}` : ""}`}
+          </p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">Open Spox →</p>
+        </Link>
+        <Link
+          href={`/sites/${site.id}/hardware`}
           id="hardware"
-          title="Hardware & Replacement"
-          description="Devices deployed at this site and their replacement history."
+          className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        >
+          <h3 className="text-sm font-medium text-gray-900">Hardware &amp; Replacement</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            Devices deployed at this site and their replacement history.
+          </p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">Open hardware →</p>
+        </Link>
+        <ScopeChangesCard
+          id="scope"
+          siteId={site.id}
+          scopeChanges={scopeChanges}
+          approvers={ownersRes.data ?? []}
+          canEdit={canEdit}
         />
       </div>
     </div>

@@ -362,6 +362,43 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Sample usage data (spec §5.10) for the Acme HQ site, so the Customer
+-- Usage page demos with a real "actual vs expected" trend and a health
+-- category. Expected = 40 entries/week for VMS with host; a few weeks of
+-- actual counts across two sources. Idempotent.
+-- ---------------------------------------------------------------------
+do $$
+declare
+  hq_id uuid;
+  vms_id uuid;
+  src_tab uuid;
+  src_app uuid;
+begin
+  select id into hq_id from sites where name = 'Acme Corp HQ - Mumbai';
+  select id into vms_id from modules where name = 'VMS with host';
+  select id into src_tab from entry_sources where name = 'VMS Tab';
+  select id into src_app from entry_sources where name = 'Dashboard/app';
+
+  if hq_id is not null and vms_id is not null
+     and not exists (select 1 from usage_entries where site_id = hq_id) then
+
+    insert into usage_expectations (site_id, module_id, expected_per_week)
+    values (hq_id, vms_id, 40);
+
+    insert into usage_entries (site_id, module_id, entry_source_id, year, month, week, entry_count, source)
+    values
+      (hq_id, vms_id, src_tab, 2026, 6, 1, 30, 'imported'),
+      (hq_id, vms_id, src_app, 2026, 6, 1, 8, 'imported'),
+      (hq_id, vms_id, src_tab, 2026, 6, 2, 12, 'imported'),
+      (hq_id, vms_id, src_app, 2026, 6, 2, 6, 'imported'),
+      (hq_id, vms_id, src_tab, 2026, 6, 3, 18, 'imported'),
+      (hq_id, vms_id, src_app, 2026, 6, 3, 9, 'imported'),
+      (hq_id, vms_id, src_tab, 2026, 6, 4, 22, 'imported'),
+      (hq_id, vms_id, src_app, 2026, 6, 4, 11, 'imported');
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- First admin account. Pre-provisioned so Priyanka can log in once auth
 -- is wired up; auth_user_id is linked automatically on first sign-in
 -- (see app/auth/callback/route.ts).
@@ -369,3 +406,36 @@ end $$;
 insert into internal_users (email, name, role)
 values ('priyanka.s@hipla.io', 'Priyanka Shinde', 'admin')
 on conflict (email) do nothing;
+
+-- ---------------------------------------------------------------------
+-- Demo scope changes on Acme HQ (spec §5.7) — one of each status so the
+-- timeline shows something real. Idempotent: only seeds if the site has
+-- no scope changes yet. Approver/requester reuse seeded internal_users.
+-- ---------------------------------------------------------------------
+do $$
+declare
+  hq_id uuid;
+  approver1 uuid; -- Priyanka (always present)
+  approver2 uuid; -- Arpita if seeded, else falls back to Priyanka
+begin
+  select id into hq_id from sites where name = 'Acme Corp HQ - Mumbai';
+  select id into approver1 from internal_users where name = 'Priyanka Shinde' limit 1;
+  select id into approver2 from internal_users where name = 'Arpita Roy' limit 1;
+  approver2 := coalesce(approver2, approver1);
+
+  if hq_id is not null and approver1 is not null
+     and not exists (select 1 from scope_changes where site_id = hq_id) then
+    insert into scope_changes
+      (site_id, description, change_date, impact, approver_id, status, created_by)
+    values
+      (hq_id,
+       'Client requested adding 5 extra meeting-room tablets to the Mumbai HQ rollout after the onboarding review.',
+       '2026-06-10', 'Timeline +1 week', approver1, 'approved', approver2),
+      (hq_id,
+       'Extend VMS visitor check-in to the 3rd-floor reception desk, beyond the originally scoped ground-floor lobby.',
+       '2026-06-28', 'No timeline impact', approver2, 'pending', approver1),
+      (hq_id,
+       'Add a facial-recognition kiosk at the main gate.',
+       '2026-05-15', 'Budget +₹2,00,000', approver1, 'rejected', approver2);
+  end if;
+end $$;
