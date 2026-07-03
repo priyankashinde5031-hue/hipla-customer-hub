@@ -8,6 +8,7 @@ import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { PoTableRow } from "./po-table";
 import { SiteMetaCard } from "./site-meta-card";
 import { SiteStickyNav, type NavSection } from "./site-sticky-nav";
+import { ScopeChangesCard, type ScopeChangeRow } from "./scope-changes-view";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
@@ -341,6 +342,20 @@ export default async function SitePage({
     .map((r) => `${spoxCounts[r]} ${spoxRoleLabels[r]}`)
     .join(" · ");
 
+  // Scope changes (spec §5.7) — site-scoped, live rows only (soft-deleted
+  // rows stay in the table but never surface). Approver + requester names are
+  // resolved via the internal_users FKs.
+  const { data: scopeChangesRaw } = await supabase
+    .from("scope_changes")
+    .select(
+      `id, description, change_date, impact, approver_id, status, created_at,
+       approver:internal_users!scope_changes_approver_id_fkey ( name ),
+       created_by_user:internal_users!scope_changes_created_by_fkey ( name )`,
+    )
+    .eq("site_id", site.id)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
+
   const invoicesByPo = new Map<string, typeof invoices>();
   for (const inv of invoices || []) {
     if (!inv.po_id) continue;
@@ -583,6 +598,22 @@ export default async function SitePage({
       ? "No upcoming renewals"
       : null;
 
+  // Scope-change rows for the modal. Approver options reuse the active
+  // internal-users list already loaded for PO owners (ownersRes).
+  const flattenName = (v: { name: string } | { name: string }[] | null) =>
+    (Array.isArray(v) ? v[0] : v)?.name ?? null;
+  const scopeChanges: ScopeChangeRow[] = (scopeChangesRaw || []).map((sc) => ({
+    id: sc.id,
+    description: sc.description,
+    changeDate: sc.change_date,
+    impact: sc.impact,
+    approverId: sc.approver_id,
+    approverName: flattenName(sc.approver),
+    status: sc.status,
+    createdByName: flattenName(sc.created_by_user),
+    createdAt: sc.created_at,
+  }));
+
   // Anchor targets for the sticky sub-header nav (ids match the section markup).
   const navSections: NavSection[] = [
     { id: "overview", label: "Overview" },
@@ -593,6 +624,7 @@ export default async function SitePage({
     { id: "support", label: "Support" },
     { id: "contacts", label: "Contacts" },
     { id: "hardware", label: "Hardware" },
+    { id: "scope", label: "Scope" },
   ];
 
   return (
@@ -1147,9 +1179,12 @@ export default async function SitePage({
           </p>
           <p className="mt-3 text-xs font-medium text-indigo-600">Open hardware →</p>
         </Link>
-        <PlaceholderCard
-          title="Scope Changes"
-          description="Approved changes to this site's implementation scope."
+        <ScopeChangesCard
+          id="scope"
+          siteId={site.id}
+          scopeChanges={scopeChanges}
+          approvers={ownersRes.data ?? []}
+          canEdit={canEdit}
         />
       </div>
     </div>
