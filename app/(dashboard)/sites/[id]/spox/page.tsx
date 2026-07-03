@@ -40,7 +40,7 @@ export default async function SiteSpoxPage({
          left_at, created_at,
          internal_owner_team:internal_teams ( name ),
          internal_owner_user:internal_users!spox_internal_owner_user_id_fkey ( name ),
-         replaced_by:spox!spox_replaced_by_id_fkey ( name )`,
+         replaced_by:spox!replaced_by_id ( name )`,
       )
       .eq("site_id", id)
       .order("created_at", { ascending: true }),
