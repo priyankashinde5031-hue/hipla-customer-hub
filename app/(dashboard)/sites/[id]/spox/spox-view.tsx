@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Mail, Phone, Pencil, Trash2, UserMinus, GraduationCap } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -110,6 +111,7 @@ export function SpoxView({
   const [deactivating, setDeactivating] = useState<SpoxRow | null>(null);
   const [deleting, setDeleting] = useState<SpoxRow | null>(null);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   const active = useMemo(() => spox.filter((s) => s.status === "active"), [spox]);
   const inactive = useMemo(() => spox.filter((s) => s.status === "inactive"), [spox]);
@@ -125,6 +127,7 @@ export function SpoxView({
       }
       toast.success("Spox added.");
       setShowAdd(false);
+      router.refresh();
     });
   };
 
@@ -137,6 +140,7 @@ export function SpoxView({
       }
       toast.success("Spox updated.");
       setEditing(null);
+      router.refresh();
     });
   };
 
@@ -149,6 +153,7 @@ export function SpoxView({
       }
       toast.success("Spox deleted.");
       setDeleting(null);
+      router.refresh();
     });
   };
 
@@ -534,6 +539,7 @@ function ReplacementDialog({
   const [selected, setSelected] = useState("");
   const [addingNew, setAddingNew] = useState(candidates.length === 0 && otherCandidates.length === 0);
   const [pending, startTransition] = useTransition();
+  const router = useRouter();
 
   const confirmExisting = () => {
     startTransition(async () => {
@@ -544,6 +550,7 @@ function ReplacementDialog({
       }
       toast.success(`${spox.name} marked as left.`);
       onClose();
+      router.refresh();
     });
   };
 
@@ -556,6 +563,7 @@ function ReplacementDialog({
       }
       toast.success(`${spox.name} marked as left, replacement added.`);
       onClose();
+      router.refresh();
     });
   };
 
