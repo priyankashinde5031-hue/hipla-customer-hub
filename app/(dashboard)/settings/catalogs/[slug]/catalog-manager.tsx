@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -43,6 +44,7 @@ export function CatalogManager({
 }) {
   const [dialogItem, setDialogItem] = useState<CatalogItem | null | "new">(null);
   const [isPending, startTransition] = useTransition();
+  const router = useRouter();
 
   const closeDialog = () => setDialogItem(null);
 
@@ -59,6 +61,7 @@ export function CatalogManager({
       }
       toast.success(dialogItem === "new" ? `${catalog.singular} added.` : `${catalog.singular} updated.`);
       closeDialog();
+      router.refresh();
     });
   }
 
@@ -70,6 +73,7 @@ export function CatalogManager({
         return;
       }
       toast.success(item.active ? `${catalog.singular} deactivated.` : `${catalog.singular} activated.`);
+      router.refresh();
     });
   }
 
