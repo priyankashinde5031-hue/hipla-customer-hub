@@ -190,7 +190,14 @@ export default async function SitePage({
          contract_time:contract_times!contract_time_id ( name, months ),
          po_sites ( site_id ),
          po_modules ( module_id, license_count, module:modules ( name ) ),
-         po_line_items ( id, description, qty, unit_price_paise, amount_paise )
+         po_line_items (
+           id, description, qty, unit_price_paise, amount_paise,
+           product_id, product_category_id, cost_type_id, renewal_term_id,
+           product:products!product_id ( name ),
+           line_category:product_categories!product_category_id ( name ),
+           line_cost_type:cost_types!cost_type_id ( name ),
+           renewal_term:renewal_terms!renewal_term_id ( name )
+         )
        )`,
     )
     .eq("site_id", id);
@@ -451,6 +458,9 @@ export default async function SitePage({
     user,
     poTypesRes,
     costTypesRes,
+    productsRes,
+    productCategoriesRes,
+    renewalTermsRes,
     financialYearsRes,
     paymentTermsRes,
     contractTimesRes,
@@ -461,6 +471,9 @@ export default async function SitePage({
     getCurrentInternalUser(),
     supabase.from("po_types").select("id, name").eq("active", true).order("name"),
     supabase.from("cost_types").select("id, name").eq("active", true).order("name"),
+    supabase.from("products").select("id, name").eq("active", true).order("name"),
+    supabase.from("product_categories").select("id, name").eq("active", true).order("name"),
+    supabase.from("renewal_terms").select("id, name").eq("active", true).order("name"),
     supabase.from("financial_years").select("id, name").eq("active", true).order("name"),
     supabase
       .from("payment_terms")
@@ -495,6 +508,9 @@ export default async function SitePage({
     siteId: id,
     poTypeOptions: poTypesRes.data ?? [],
     costTypeOptions: costTypesRes.data ?? [],
+    productOptions: productsRes.data ?? [],
+    productCategoryOptions: productCategoriesRes.data ?? [],
+    renewalTermOptions: renewalTermsRes.data ?? [],
     financialYearOptions: financialYearsRes.data ?? [],
     paymentTermsOptions: (paymentTermsRes.data ?? []).map((t) => ({ id: t.id, name: t.name })),
     contractTimeOptions: contractTimesRes.data ?? [],
@@ -574,7 +590,6 @@ export default async function SitePage({
         po_number: po.po_number,
         name: po.name ?? null,
         po_type_id: po.po_type_id ?? null,
-        cost_type_id: po.cost_type_id ?? null,
         po_received_date: po.po_received_date ?? null,
         financial_year_id: po.financial_year_id ?? null,
         gst_percent: po.gst_percent ?? null,
@@ -589,6 +604,10 @@ export default async function SitePage({
           description: li.description,
           qty: li.qty,
           unit_price_paise: li.unit_price_paise,
+          product_id: li.product_id ?? null,
+          product_category_id: li.product_category_id ?? null,
+          cost_type_id: li.cost_type_id ?? null,
+          renewal_term_id: li.renewal_term_id ?? null,
         })),
         attachment: poAttachmentById.get(po.id) ?? null,
       },
@@ -820,6 +839,24 @@ export default async function SitePage({
             const costType = Array.isArray(po.cost_type)
               ? po.cost_type[0]
               : po.cost_type;
+            // Cost type now lives on each line item, so a PO can carry several.
+            // Show the distinct set; fall back to the PO's legacy value.
+            const lineCostTypes = Array.from(
+              new Set(
+                (po.po_line_items || [])
+                  .map((li) => {
+                    const ct = Array.isArray(li.line_cost_type)
+                      ? li.line_cost_type[0]
+                      : li.line_cost_type;
+                    return ct?.name ?? null;
+                  })
+                  .filter((n): n is string => Boolean(n)),
+              ),
+            );
+            const costTypeSummary =
+              lineCostTypes.length > 0
+                ? lineCostTypes.join(", ")
+                : costType?.name || "—";
             const financialYear = Array.isArray(po.financial_year)
               ? po.financial_year[0]
               : po.financial_year;
@@ -892,7 +929,7 @@ export default async function SitePage({
                 poNumber={po.name || po.po_number}
                 statusLabel={poType?.name ?? null}
                 product={moduleNames}
-                type={costType?.name || "—"}
+                type={costTypeSummary}
                 date={formatDisplayDate(nextRenewalIso)}
                 amount={formatPaise(poGrossById.get(po.id) ?? 0)}
                 colSpan={7}
@@ -957,30 +994,47 @@ export default async function SitePage({
                       <thead className="text-xs font-medium uppercase tracking-wide text-gray-500">
                         <tr>
                           <th className="py-1 text-left font-medium">Description</th>
+                          <th className="py-1 text-left font-medium">Category</th>
+                          <th className="py-1 text-left font-medium">Cost type</th>
+                          <th className="py-1 text-left font-medium">Renewal term</th>
                           <th className="py-1 text-right font-medium">Qty</th>
                           <th className="py-1 text-right font-medium">Unit price</th>
                           <th className="py-1 text-right font-medium">Amount</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {(po.po_line_items || []).map((li) => (
-                          <tr key={li.id}>
-                            <td className="py-1 text-slate-700">{li.description}</td>
-                            <td className="py-1 text-right tabular-nums text-slate-700">
-                              {li.qty}
-                            </td>
-                            <td className="py-1 text-right tabular-nums text-slate-700">
-                              {formatPaise(li.unit_price_paise)}
-                            </td>
-                            <td className="py-1 text-right tabular-nums text-gray-900">
-                              {formatPaise(li.amount_paise)}
-                            </td>
-                          </tr>
-                        ))}
+                        {(po.po_line_items || []).map((li) => {
+                          const cat = Array.isArray(li.line_category)
+                            ? li.line_category[0]
+                            : li.line_category;
+                          const ct = Array.isArray(li.line_cost_type)
+                            ? li.line_cost_type[0]
+                            : li.line_cost_type;
+                          const rt = Array.isArray(li.renewal_term)
+                            ? li.renewal_term[0]
+                            : li.renewal_term;
+                          return (
+                            <tr key={li.id}>
+                              <td className="py-1 text-slate-700">{li.description}</td>
+                              <td className="py-1 text-slate-600">{cat?.name || "—"}</td>
+                              <td className="py-1 text-slate-600">{ct?.name || "—"}</td>
+                              <td className="py-1 text-slate-600">{rt?.name || "—"}</td>
+                              <td className="py-1 text-right tabular-nums text-slate-700">
+                                {li.qty}
+                              </td>
+                              <td className="py-1 text-right tabular-nums text-slate-700">
+                                {formatPaise(li.unit_price_paise)}
+                              </td>
+                              <td className="py-1 text-right tabular-nums text-gray-900">
+                                {formatPaise(li.amount_paise)}
+                              </td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot className="border-t border-slate-200">
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                          <td colSpan={6} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             Subtotal (goods)
                           </td>
                           <td className="py-1 text-right tabular-nums text-slate-600">
@@ -988,7 +1042,7 @@ export default async function SitePage({
                           </td>
                         </tr>
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                          <td colSpan={6} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             GST{po.gst_percent ? ` (${po.gst_percent}%)` : ""}
                           </td>
                           <td className="py-1 text-right tabular-nums text-slate-600">
@@ -996,7 +1050,7 @@ export default async function SitePage({
                           </td>
                         </tr>
                         <tr>
-                          <td colSpan={3} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                          <td colSpan={6} className="py-1 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                             PO total
                           </td>
                           <td className="py-1 text-right font-semibold tabular-nums text-gray-900">

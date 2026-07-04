@@ -13,12 +13,26 @@ export type PoLineItemInput = {
   description: string;
   qty: number; // positive
   unitPriceRupees: number; // entered in ₹, converted to paise here
+  productId: string | null; // catalogue product; null when a custom / one-off line
+  productCategoryId: string | null; // Software / Hardware / Change Request …
+  costTypeId: string | null; // cost type now lives per line item, not per PO
+  renewalTermId: string | null; // Annually 12% escalation / Hardware one-time / …
+};
+
+// DB-ready line-item row (paise + catalogue ids), produced by validate().
+type LineRow = {
+  description: string;
+  qty: number;
+  unit_price_paise: number;
+  product_id: string | null;
+  product_category_id: string | null;
+  cost_type_id: string | null;
+  renewal_term_id: string | null;
 };
 
 export type PoFormInput = {
   name: string;
   poTypeId: string | null;
-  costTypeId: string | null;
   poReceivedDate: string | null; // yyyy-mm-dd
   financialYearId: string | null;
   gstPercent: number | null;
@@ -53,7 +67,7 @@ function normalizeLicenseCount(value: number | null | undefined): number | null 
 function validate(input: PoFormInput): {
   error?: string;
   po?: Record<string, unknown>;
-  lineRows?: { description: string; qty: number; unit_price_paise: number }[];
+  lineRows?: LineRow[];
 } {
   const name = input.name?.trim();
   if (!name) return { error: "PO name is required." };
@@ -67,7 +81,7 @@ function validate(input: PoFormInput): {
   }
 
   const rawItems = input.lineItems ?? [];
-  const lineRows: { description: string; qty: number; unit_price_paise: number }[] = [];
+  const lineRows: LineRow[] = [];
 
   for (const item of rawItems) {
     const description = item.description?.trim();
@@ -85,7 +99,15 @@ function validate(input: PoFormInput): {
     if (paise === null) {
       return { error: `Unit price for "${description}" must be zero or more.` };
     }
-    lineRows.push({ description, qty: item.qty, unit_price_paise: paise });
+    lineRows.push({
+      description,
+      qty: item.qty,
+      unit_price_paise: paise,
+      product_id: item.productId || null,
+      product_category_id: item.productCategoryId || null,
+      cost_type_id: item.costTypeId || null,
+      renewal_term_id: item.renewalTermId || null,
+    });
   }
 
   if (lineRows.length === 0) {
@@ -95,7 +117,7 @@ function validate(input: PoFormInput): {
   const po: Record<string, unknown> = {
     name,
     po_type_id: input.poTypeId || null,
-    cost_type_id: input.costTypeId || null,
+    // Cost type now lives on each line item, not the PO header.
     po_received_date: input.poReceivedDate || null,
     financial_year_id: input.financialYearId || null,
     gst_percent: input.gstPercent,
@@ -230,7 +252,7 @@ async function generateRenewals(
   organizationId: string,
   anchorSiteId: string,
   contractTimeId: string | null,
-  lineRows: { description: string; qty: number; unit_price_paise: number }[],
+  lineRows: LineRow[],
 ): Promise<void> {
   let initialTermMonths = 12;
   if (contractTimeId) {
@@ -343,7 +365,7 @@ async function writeChildren(
   siteIds: string[],
   moduleIds: string[],
   moduleLicenseCounts: Record<string, number | null> | undefined,
-  lineRows: { description: string; qty: number; unit_price_paise: number }[],
+  lineRows: LineRow[],
 ): Promise<string | null> {
   if (siteIds.length > 0) {
     const { error } = await supabase
@@ -385,7 +407,12 @@ async function snapshotPo(
   const [{ data: sites }, { data: modules }, { data: items }] = await Promise.all([
     supabase.from("po_sites").select("site_id").eq("po_id", poId),
     supabase.from("po_modules").select("module_id, license_count").eq("po_id", poId),
-    supabase.from("po_line_items").select("description, qty, unit_price_paise").eq("po_id", poId),
+    supabase
+      .from("po_line_items")
+      .select(
+        "description, qty, unit_price_paise, product_id, product_category_id, cost_type_id, renewal_term_id",
+      )
+      .eq("po_id", poId),
   ]);
 
   return {
