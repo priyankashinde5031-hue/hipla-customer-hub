@@ -642,7 +642,6 @@ export default async function SitePage({
   // Anchor targets for the sticky sub-header nav (ids match the section markup).
   const navSections: NavSection[] = [
     { id: "overview", label: "Overview" },
-    { id: "addresses", label: "Addresses" },
     { id: "pos", label: "POs" },
     { id: "licenses", label: "Licenses" },
     { id: "implementation", label: "Implementation" },
@@ -650,6 +649,7 @@ export default async function SitePage({
     { id: "contacts", label: "Contacts" },
     { id: "hardware", label: "Hardware" },
     { id: "scope", label: "Scope" },
+    { id: "addresses", label: "Addresses" },
   ];
 
   return (
@@ -729,18 +729,6 @@ export default async function SitePage({
           addressShipping: toAddressFields(site.address_shipping),
         }}
       />
-      </div>
-
-      <h2
-        id="addresses"
-        className="mt-8 scroll-mt-24 text-lg font-serif font-semibold text-gray-900"
-      >
-        Addresses
-      </h2>
-      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <AddressBlock label="Site / physical" address={site.address_site} />
-        <AddressBlock label="Billing" address={site.address_billing} />
-        <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
 
       <div
@@ -1227,6 +1215,18 @@ export default async function SitePage({
           approvers={ownersRes.data ?? []}
           canEdit={canEdit}
         />
+      </div>
+
+      <h2
+        id="addresses"
+        className="mt-8 scroll-mt-24 text-lg font-serif font-semibold text-gray-900"
+      >
+        Addresses
+      </h2>
+      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <AddressBlock label="Site / physical" address={site.address_site} />
+        <AddressBlock label="Billing" address={site.address_billing} />
+        <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
     </div>
   );
