@@ -189,7 +189,7 @@ export default async function SitePage({
          ),
          contract_time:contract_times!contract_time_id ( name, months ),
          po_sites ( site_id ),
-         po_modules ( module_id, module:modules ( name ) ),
+         po_modules ( module_id, license_count, module:modules ( name ) ),
          po_line_items ( id, description, qty, unit_price_paise, amount_paise )
        )`,
     )
@@ -208,16 +208,23 @@ export default async function SitePage({
   // Licenses card = distinct modules covered by this site's POs. Derived on
   // read from po_modules rather than hand-tracked (CLAUDE.md: reference/usage
   // data isn't hand-totaled where it can be computed).
-  const licenseModules = Array.from(
-    new Map(
-      purchaseOrders
-        .flatMap((po) => po.po_modules || [])
-        .map((pm) => {
-          const mod = Array.isArray(pm.module) ? pm.module[0] : pm.module;
-          return [pm.module_id, mod?.name ?? "—"] as const;
-        }),
-    ).entries(),
-  ).sort((a, b) => a[1].localeCompare(b[1]));
+  // moduleId -> { name, licenses }. Licenses sum the recorded counts across
+  // this site's POs; null means no PO recorded a count for that module.
+  const licenseAgg = new Map<string, { name: string; licenses: number | null }>();
+  for (const pm of purchaseOrders.flatMap((po) => po.po_modules || [])) {
+    const mod = Array.isArray(pm.module) ? pm.module[0] : pm.module;
+    const name = mod?.name ?? "—";
+    const count = pm.license_count;
+    const prev = licenseAgg.get(pm.module_id);
+    const licenses =
+      count == null
+        ? (prev?.licenses ?? null)
+        : (prev?.licenses ?? 0) + count;
+    licenseAgg.set(pm.module_id, { name, licenses });
+  }
+  const licenseModules = Array.from(licenseAgg.entries())
+    .map(([id, v]) => [id, v.name, v.licenses] as const)
+    .sort((a, b) => a[1].localeCompare(b[1]));
 
   const { data: poTotals } = poIds.length
     ? await supabase.from("po_totals").select("po_id, po_value_paise").in("po_id", poIds)
@@ -288,31 +295,35 @@ export default async function SitePage({
   const payments = paymentsQuery?.data ?? [];
 
   // Active Spox for the card summary (spec §4.1) — role breakdown at a glance.
+  // Roles are Settings-managed (spox_roles): label + display order come from the
+  // catalog, not a hardcoded map.
   const { data: activeSpox } = await supabase
     .from("spox")
-    .select("role")
+    .select("spox_role_id, spox_role:spox_roles ( name, sort_order )")
     .eq("site_id", site.id)
     .eq("status", "active");
-  const spoxRoleLabels: Record<string, string> = {
-    decision_maker: "Decision Maker",
-    solution_approver: "Solution Approver",
-    middle_user_manager: "Middle User/Manager",
-    end_user: "End User",
-  };
-  const spoxRoleOrder = [
-    "decision_maker",
-    "solution_approver",
-    "middle_user_manager",
-    "end_user",
-  ];
+  const flattenRole = <T,>(v: T | T[] | null): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : v;
+  const spoxRoleMeta = new Map<string, { name: string; sortOrder: number }>();
   const spoxCounts = (activeSpox || []).reduce<Record<string, number>>((acc, s) => {
-    acc[s.role] = (acc[s.role] || 0) + 1;
+    const role = flattenRole(s.spox_role);
+    const key = s.spox_role_id;
+    if (!spoxRoleMeta.has(key)) {
+      spoxRoleMeta.set(key, {
+        name: role?.name ?? "—",
+        sortOrder: role?.sort_order ?? 0,
+      });
+    }
+    acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
   const spoxTotal = activeSpox?.length ?? 0;
-  const spoxBreakdown = spoxRoleOrder
-    .filter((r) => spoxCounts[r])
-    .map((r) => `${spoxCounts[r]} ${spoxRoleLabels[r]}`)
+  const spoxBreakdown = Object.keys(spoxCounts)
+    .sort(
+      (a, b) =>
+        (spoxRoleMeta.get(a)?.sortOrder ?? 0) - (spoxRoleMeta.get(b)?.sortOrder ?? 0),
+    )
+    .map((key) => `${spoxCounts[key]} ${spoxRoleMeta.get(key)?.name ?? "—"}`)
     .join(" · ");
 
   // Support ticket counts for the card summary (spec §5.9). Open = no close date.
@@ -323,6 +334,14 @@ export default async function SitePage({
     .is("deleted_at", null);
   const supportTotal = supportTickets?.length ?? 0;
   const supportOpen = (supportTickets || []).filter((t) => !t.closed_date).length;
+
+  // Agreements count for the card summary — live rows only (soft-deleted hidden).
+  const { count: agreementsCount } = await supabase
+    .from("agreements")
+    .select("id", { count: "exact", head: true })
+    .eq("site_id", site.id)
+    .is("deleted_at", null);
+  const agreementsTotal = agreementsCount ?? 0;
 
   // Scope changes (spec §5.7) — site-scoped, live rows only (soft-deleted
   // rows stay in the table but never surface). Approver + requester names are
@@ -563,6 +582,9 @@ export default async function SitePage({
         contract_time_id: po.contract_time_id ?? null,
         site_ids: (po.po_sites || []).map((s) => s.site_id),
         module_ids: (po.po_modules || []).map((m) => m.module_id),
+        module_license_counts: Object.fromEntries(
+          (po.po_modules || []).map((m) => [m.module_id, m.license_count ?? null]),
+        ),
         line_items: (po.po_line_items || []).map((li) => ({
           description: li.description,
           qty: li.qty,
@@ -642,7 +664,6 @@ export default async function SitePage({
   // Anchor targets for the sticky sub-header nav (ids match the section markup).
   const navSections: NavSection[] = [
     { id: "overview", label: "Overview" },
-    { id: "addresses", label: "Addresses" },
     { id: "pos", label: "POs" },
     { id: "licenses", label: "Licenses" },
     { id: "implementation", label: "Implementation" },
@@ -650,6 +671,8 @@ export default async function SitePage({
     { id: "contacts", label: "Contacts" },
     { id: "hardware", label: "Hardware" },
     { id: "scope", label: "Scope" },
+    { id: "agreements", label: "Agreements" },
+    { id: "addresses", label: "Addresses" },
   ];
 
   return (
@@ -729,18 +752,6 @@ export default async function SitePage({
           addressShipping: toAddressFields(site.address_shipping),
         }}
       />
-      </div>
-
-      <h2
-        id="addresses"
-        className="mt-8 scroll-mt-24 text-lg font-serif font-semibold text-gray-900"
-      >
-        Addresses
-      </h2>
-      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
-        <AddressBlock label="Site / physical" address={site.address_site} />
-        <AddressBlock label="Billing" address={site.address_billing} />
-        <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
 
       <div
@@ -1144,12 +1155,17 @@ export default async function SitePage({
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {licenseModules.map(([moduleId, name]) => (
+            {licenseModules.map(([moduleId, name, licenses]) => (
               <span
                 key={moduleId}
-                className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700"
+                className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700"
               >
                 {name}
+                {licenses != null && (
+                  <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-indigo-600">
+                    {licenses.toLocaleString("en-IN")}
+                  </span>
+                )}
               </span>
             ))}
           </div>
@@ -1227,6 +1243,47 @@ export default async function SitePage({
           approvers={ownersRes.data ?? []}
           canEdit={canEdit}
         />
+        <Link
+          href={`/sites/${site.id}/agreements`}
+          id="agreements"
+          className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        >
+          <h3 className="text-sm font-medium text-gray-900">Agreements</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {agreementsTotal === 0
+              ? "Store signed agreements for this site — NDAs, service agreements, and more."
+              : `${agreementsTotal} agreement${agreementsTotal === 1 ? "" : "s"} on file.`}
+          </p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">Open agreements →</p>
+        </Link>
+        {/* Scope & Flow — placeholder for a later milestone. Not a link (nothing
+            to open yet); styled muted so it clearly reads as coming soon. */}
+        <div
+          id="scope-and-flow"
+          className="scroll-mt-24 block rounded-xl border border-dashed border-gray-200 bg-white/60 p-4 shadow-sm"
+        >
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-gray-500">Scope &amp; Flow</h3>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+              Coming soon
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-slate-400">
+            The scope and flow for this site will live here. We&apos;ll build it later.
+          </p>
+        </div>
+      </div>
+
+      <h2
+        id="addresses"
+        className="mt-8 scroll-mt-24 text-lg font-serif font-semibold text-gray-900"
+      >
+        Addresses
+      </h2>
+      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-3">
+        <AddressBlock label="Site / physical" address={site.address_site} />
+        <AddressBlock label="Billing" address={site.address_billing} />
+        <AddressBlock label="Shipping" address={site.address_shipping} />
       </div>
     </div>
   );

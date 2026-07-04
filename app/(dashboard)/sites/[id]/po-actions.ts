@@ -26,6 +26,9 @@ export type PoFormInput = {
   contractTimeId: string | null;
   siteIds: string[];
   moduleIds: string[];
+  // License count per module id (only for selected modules). Omitted / null
+  // means "not recorded" — stored directly since it's entered, not derived.
+  moduleLicenseCounts?: Record<string, number | null>;
   lineItems: PoLineItemInput[];
 };
 
@@ -37,6 +40,13 @@ type ActionResult = { error?: string; poId?: string; poNumber?: string };
 function rupeesToPaise(rupees: number): number | null {
   if (!Number.isFinite(rupees) || rupees < 0) return null;
   return Math.round(rupees * 100);
+}
+
+// A recorded license count is a whole, non-negative number. Anything blank or
+// invalid becomes null ("not recorded"), never an error — the count is optional.
+function normalizeLicenseCount(value: number | null | undefined): number | null {
+  if (value == null || !Number.isFinite(value) || value < 0) return null;
+  return Math.floor(value);
 }
 
 // Shared validation for create and edit. Produces DB-ready rows.
@@ -123,7 +133,14 @@ export async function createPurchaseOrder(
 
   const poId = inserted.id as string;
 
-  const childError = await writeChildren(supabase, poId, input.siteIds, input.moduleIds, lineRows!);
+  const childError = await writeChildren(
+    supabase,
+    poId,
+    input.siteIds,
+    input.moduleIds,
+    input.moduleLicenseCounts,
+    lineRows!,
+  );
   if (childError) return { error: childError };
 
   // Auto-generate the Year 2–5 renewal projections. The user never creates
@@ -181,7 +198,14 @@ export async function updatePurchaseOrder(
   await supabase.from("po_modules").delete().eq("po_id", poId);
   await supabase.from("po_line_items").delete().eq("po_id", poId);
 
-  const childError = await writeChildren(supabase, poId, input.siteIds, input.moduleIds, lineRows!);
+  const childError = await writeChildren(
+    supabase,
+    poId,
+    input.siteIds,
+    input.moduleIds,
+    input.moduleLicenseCounts,
+    lineRows!,
+  );
   if (childError) return { error: childError };
 
   await writeAudit(supabase, user!.id, "update", poId, before, {
@@ -318,6 +342,7 @@ async function writeChildren(
   poId: string,
   siteIds: string[],
   moduleIds: string[],
+  moduleLicenseCounts: Record<string, number | null> | undefined,
   lineRows: { description: string; qty: number; unit_price_paise: number }[],
 ): Promise<string | null> {
   if (siteIds.length > 0) {
@@ -328,9 +353,13 @@ async function writeChildren(
   }
 
   if (moduleIds.length > 0) {
-    const { error } = await supabase
-      .from("po_modules")
-      .insert(moduleIds.map((moduleId) => ({ po_id: poId, module_id: moduleId })));
+    const { error } = await supabase.from("po_modules").insert(
+      moduleIds.map((moduleId) => ({
+        po_id: poId,
+        module_id: moduleId,
+        license_count: normalizeLicenseCount(moduleLicenseCounts?.[moduleId]),
+      })),
+    );
     if (error) return error.message;
   }
 
@@ -355,7 +384,7 @@ async function snapshotPo(
 
   const [{ data: sites }, { data: modules }, { data: items }] = await Promise.all([
     supabase.from("po_sites").select("site_id").eq("po_id", poId),
-    supabase.from("po_modules").select("module_id").eq("po_id", poId),
+    supabase.from("po_modules").select("module_id, license_count").eq("po_id", poId),
     supabase.from("po_line_items").select("description, qty, unit_price_paise").eq("po_id", poId),
   ]);
 
@@ -363,6 +392,9 @@ async function snapshotPo(
     ...po,
     site_ids: (sites || []).map((s) => s.site_id),
     module_ids: (modules || []).map((m) => m.module_id),
+    module_license_counts: Object.fromEntries(
+      (modules || []).map((m) => [m.module_id, m.license_count]),
+    ),
     line_items: items || [],
   };
 }

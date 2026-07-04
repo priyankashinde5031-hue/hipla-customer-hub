@@ -9,19 +9,11 @@ const canEditSpox = canEditCatalogs;
 
 type ActionResult = { error?: string; id?: string };
 
-// Local, non-exported: a "use server" module may only *export* async functions.
-// The role list is re-declared for UI use in spox-view.tsx (ROLE_META).
-const SPOX_ROLES = [
-  "decision_maker",
-  "solution_approver",
-  "middle_user_manager",
-  "end_user",
-] as const;
-export type SpoxRole = (typeof SPOX_ROLES)[number];
-
+// The role is now Settings-managed reference data (spox_roles), referenced by
+// id — same as internal_owner_team_id. No hardcoded enum lives here anymore.
 export type SpoxInput = {
   name: string;
-  role: SpoxRole;
+  roleId: string;
   email: string | null;
   phone: string | null;
   designation: string | null;
@@ -53,13 +45,13 @@ async function writeAudit(
 function toRow(input: SpoxInput): { row: Record<string, unknown> } | { error: string } {
   const name = input.name?.trim();
   if (!name) return { error: "Enter the contact's name." };
-  if (!SPOX_ROLES.includes(input.role)) return { error: "Choose a role." };
+  if (!input.roleId) return { error: "Choose a role." };
   if (!input.internalOwnerTeamId) return { error: "Choose an internal owner team." };
 
   return {
     row: {
       name,
-      role: input.role,
+      spox_role_id: input.roleId,
       email: input.email?.trim() || null,
       phone: input.phone?.trim() || null,
       designation: input.designation?.trim() || null,

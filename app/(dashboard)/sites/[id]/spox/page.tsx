@@ -2,7 +2,13 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
-import { SpoxView, type SpoxRow, type TeamOption, type StaffOption } from "./spox-view";
+import {
+  SpoxView,
+  type SpoxRow,
+  type TeamOption,
+  type StaffOption,
+  type RoleOption,
+} from "./spox-view";
 
 export default async function SiteSpoxPage({
   params,
@@ -31,30 +37,39 @@ export default async function SiteSpoxPage({
     ? site.organization[0]
     : site.organization;
 
-  const [{ data: spoxRaw }, { data: teamsRaw }, { data: staffRaw }] = await Promise.all([
-    supabase
-      .from("spox")
-      .select(
-        `id, name, role, email, phone, designation, has_taken_training,
-         internal_owner_team_id, internal_owner_user_id, status, replaced_by_id,
-         left_at, created_at,
-         internal_owner_team:internal_teams ( name ),
-         internal_owner_user:internal_users!spox_internal_owner_user_id_fkey ( name ),
-         replaced_by:spox!replaced_by_id ( name )`,
-      )
-      .eq("site_id", id)
-      .order("created_at", { ascending: true }),
-    supabase
-      .from("internal_teams")
-      .select("id, name")
-      .eq("active", true)
-      .order("sort_order"),
-    supabase
-      .from("internal_users")
-      .select("id, name")
-      .eq("is_active", true)
-      .order("name"),
-  ]);
+  const [{ data: spoxRaw }, { data: teamsRaw }, { data: staffRaw }, { data: rolesRaw }] =
+    await Promise.all([
+      supabase
+        .from("spox")
+        .select(
+          `id, name, spox_role_id, email, phone, designation, has_taken_training,
+           internal_owner_team_id, internal_owner_user_id, status, replaced_by_id,
+           left_at, created_at,
+           spox_role:spox_roles ( name ),
+           internal_owner_team:internal_teams ( name ),
+           internal_owner_user:internal_users!spox_internal_owner_user_id_fkey ( name ),
+           replaced_by:spox!replaced_by_id ( name )`,
+        )
+        .eq("site_id", id)
+        .order("created_at", { ascending: true }),
+      supabase
+        .from("internal_teams")
+        .select("id, name")
+        .eq("active", true)
+        .order("sort_order"),
+      supabase
+        .from("internal_users")
+        .select("id, name")
+        .eq("is_active", true)
+        .order("name"),
+      // All roles (active + inactive) so a Spox on a now-retired role still
+      // resolves its label; the view derives the selectable list from `active`.
+      supabase
+        .from("spox_roles")
+        .select("id, name, active")
+        .order("sort_order")
+        .order("name"),
+    ]);
 
   const flatten = <T,>(v: T | T[] | null): T | null =>
     Array.isArray(v) ? (v[0] ?? null) : v;
@@ -62,7 +77,8 @@ export default async function SiteSpoxPage({
   const spox: SpoxRow[] = (spoxRaw || []).map((s) => ({
     id: s.id,
     name: s.name,
-    role: s.role,
+    roleId: s.spox_role_id,
+    roleName: flatten(s.spox_role)?.name ?? "—",
     email: s.email,
     phone: s.phone,
     designation: s.designation,
@@ -79,6 +95,11 @@ export default async function SiteSpoxPage({
 
   const teams: TeamOption[] = (teamsRaw || []).map((t) => ({ id: t.id, name: t.name }));
   const staff: StaffOption[] = (staffRaw || []).map((u) => ({ id: u.id, name: u.name }));
+  const roles: RoleOption[] = (rolesRaw || []).map((r) => ({
+    id: r.id,
+    name: r.name,
+    active: r.active,
+  }));
 
   const orgLabel =
     organization?.brand_name || organization?.legal_name || "Organization";
@@ -110,6 +131,7 @@ export default async function SiteSpoxPage({
         spox={spox}
         teams={teams}
         staff={staff}
+        roles={roles}
         canEdit={canEdit}
       />
     </div>
