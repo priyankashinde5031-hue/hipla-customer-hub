@@ -146,6 +146,16 @@ export const CATALOGS: CatalogConfig[] = [
     uniqueField: "name",
     fields: [{ key: "name", label: "Name", type: "text", required: true }],
   },
+  {
+    slug: "agreement-types",
+    table: "agreement_types",
+    label: "Agreement Types",
+    singular: "Agreement Type",
+    description:
+      "Kinds of agreement stored against a Site, e.g. NDA, Service Agreement, PO Agreement, Addendum.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
 ];
 
 export function getCatalogBySlug(slug: string): CatalogConfig | undefined {

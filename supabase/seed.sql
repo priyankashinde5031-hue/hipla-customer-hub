@@ -123,6 +123,16 @@ insert into cost_types (name) values
 on conflict (name) do nothing;
 
 -- ---------------------------------------------------------------------
+-- Agreement types (Settings catalog; see migration 20260704000006)
+-- ---------------------------------------------------------------------
+insert into agreement_types (name) values
+  ('NDA'),
+  ('Service Agreement'),
+  ('PO Agreement'),
+  ('Addendum')
+on conflict (name) do nothing;
+
+-- ---------------------------------------------------------------------
 -- Appendix A.6 — Support ticket topics
 -- ---------------------------------------------------------------------
 insert into ticket_topics (name) values
