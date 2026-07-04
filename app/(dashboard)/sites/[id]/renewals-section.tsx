@@ -37,8 +37,15 @@ export type RenewalCardData = {
   attachment: { filename: string; url: string | null } | null;
 };
 
+// Shared field styling so every control in the card — <Input>, native <select>,
+// native <input type=date> — renders identically (height, border, disabled look).
 const inputClass =
-  "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:opacity-60";
+  "h-8 w-full rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 disabled:cursor-not-allowed disabled:bg-input/50 disabled:opacity-50";
+
+// Read-only values are boxed to match the input fields, so a card reads as a
+// uniform grid of fields rather than a mix of inputs and loose text.
+const readOnlyFieldClass =
+  "flex h-8 items-center rounded-lg border border-slate-200 bg-slate-50 px-2.5 text-sm text-slate-700";
 
 function paiseToInput(paise: number | null): string {
   return paise === null || paise === undefined ? "" : String(paise / 100);
@@ -172,8 +179,8 @@ function RenewalCard({
   }
 
   return (
-    <details className="group overflow-hidden rounded-md border border-slate-200 bg-white">
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-3 py-2.5">
+    <details className="group overflow-hidden rounded-lg border border-slate-300 bg-white shadow-sm transition-colors hover:border-slate-400 open:border-slate-400 open:shadow">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-4 px-3 py-2.5 hover:bg-slate-50">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="font-medium text-gray-900">Year {renewal.yearNumber}</span>
           <span className="text-sm text-slate-500">
@@ -196,12 +203,12 @@ function RenewalCard({
         </span>
       </summary>
 
-      <div className="border-t border-slate-100 px-3 py-3">
+      <div className="border-t border-slate-200 px-3 py-3">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {/* Renewal date — read-only, computed */}
           <div className="flex flex-col gap-1.5">
             <Label>Renewal date</Label>
-            <p className="flex h-8 items-center text-sm text-slate-700">
+            <p className={readOnlyFieldClass}>
               {formatDate(renewal.renewalDate)}
             </p>
           </div>
@@ -224,7 +231,7 @@ function RenewalCard({
           {/* Deviation — read-only, computed */}
           <div className="flex flex-col gap-1.5">
             <Label>Deviation from expected</Label>
-            <p className={`flex h-8 items-center text-sm font-medium tabular-nums ${deviationColor}`}>
+            <p className={`${readOnlyFieldClass} font-medium tabular-nums ${deviationColor}`}>
               {deviationLabel}
             </p>
           </div>
@@ -283,7 +290,7 @@ function RenewalCard({
           {/* Billing schedule — read-only, derived from the selected term */}
           <div className="flex flex-col gap-1.5">
             <Label>Billing schedule</Label>
-            <p className="flex h-8 items-center text-sm text-slate-700">
+            <p className={readOnlyFieldClass}>
               {describeSchedule(selectedTerm)}
             </p>
           </div>

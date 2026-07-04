@@ -1040,8 +1040,10 @@ export default async function SitePage({
                         return (
                           <div
                             key={inv.id}
-                            className={`rounded-md border ${
-                              isOverdue ? "border-red-200 bg-red-50/40" : "border-slate-100"
+                            className={`rounded-lg border shadow-sm ${
+                              isOverdue
+                                ? "border-red-300 bg-red-50/40"
+                                : "border-slate-300 bg-white"
                             } p-3`}
                           >
                             <div className="flex flex-wrap items-baseline justify-between gap-2">
