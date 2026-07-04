@@ -818,7 +818,7 @@ export default async function SitePage({
           <table className="w-full border-collapse text-left [font-variant-numeric:tabular-nums]">
             <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
               <tr className="border-b border-slate-200">
-                <th className="py-2 pl-2 pr-3 font-medium">PO Number</th>
+                <th className="py-2 pl-2 pr-3 font-medium">PO Name</th>
                 <th className="px-3 py-2 font-medium">Status</th>
                 <th className="px-3 py-2 font-medium">Product</th>
                 <th className="px-3 py-2 font-medium">Type</th>
@@ -898,7 +898,7 @@ export default async function SitePage({
             return (
               <PoTableRow
                 key={po.id}
-                poNumber={po.po_number}
+                poNumber={po.name || po.po_number}
                 statusLabel={poType?.name ?? null}
                 product={moduleNames}
                 type={costType?.name || "—"}
