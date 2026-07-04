@@ -189,7 +189,7 @@ export default async function SitePage({
          ),
          contract_time:contract_times!contract_time_id ( name, months ),
          po_sites ( site_id ),
-         po_modules ( module_id, module:modules ( name ) ),
+         po_modules ( module_id, license_count, module:modules ( name ) ),
          po_line_items ( id, description, qty, unit_price_paise, amount_paise )
        )`,
     )
@@ -208,16 +208,23 @@ export default async function SitePage({
   // Licenses card = distinct modules covered by this site's POs. Derived on
   // read from po_modules rather than hand-tracked (CLAUDE.md: reference/usage
   // data isn't hand-totaled where it can be computed).
-  const licenseModules = Array.from(
-    new Map(
-      purchaseOrders
-        .flatMap((po) => po.po_modules || [])
-        .map((pm) => {
-          const mod = Array.isArray(pm.module) ? pm.module[0] : pm.module;
-          return [pm.module_id, mod?.name ?? "—"] as const;
-        }),
-    ).entries(),
-  ).sort((a, b) => a[1].localeCompare(b[1]));
+  // moduleId -> { name, licenses }. Licenses sum the recorded counts across
+  // this site's POs; null means no PO recorded a count for that module.
+  const licenseAgg = new Map<string, { name: string; licenses: number | null }>();
+  for (const pm of purchaseOrders.flatMap((po) => po.po_modules || [])) {
+    const mod = Array.isArray(pm.module) ? pm.module[0] : pm.module;
+    const name = mod?.name ?? "—";
+    const count = pm.license_count;
+    const prev = licenseAgg.get(pm.module_id);
+    const licenses =
+      count == null
+        ? (prev?.licenses ?? null)
+        : (prev?.licenses ?? 0) + count;
+    licenseAgg.set(pm.module_id, { name, licenses });
+  }
+  const licenseModules = Array.from(licenseAgg.entries())
+    .map(([id, v]) => [id, v.name, v.licenses] as const)
+    .sort((a, b) => a[1].localeCompare(b[1]));
 
   const { data: poTotals } = poIds.length
     ? await supabase.from("po_totals").select("po_id, po_value_paise").in("po_id", poIds)
@@ -563,6 +570,9 @@ export default async function SitePage({
         contract_time_id: po.contract_time_id ?? null,
         site_ids: (po.po_sites || []).map((s) => s.site_id),
         module_ids: (po.po_modules || []).map((m) => m.module_id),
+        module_license_counts: Object.fromEntries(
+          (po.po_modules || []).map((m) => [m.module_id, m.license_count ?? null]),
+        ),
         line_items: (po.po_line_items || []).map((li) => ({
           description: li.description,
           qty: li.qty,
@@ -1132,12 +1142,17 @@ export default async function SitePage({
           </p>
         ) : (
           <div className="flex flex-wrap gap-2">
-            {licenseModules.map(([moduleId, name]) => (
+            {licenseModules.map(([moduleId, name, licenses]) => (
               <span
                 key={moduleId}
-                className="rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700"
+                className="inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-2.5 py-1 text-xs font-medium text-indigo-700"
               >
                 {name}
+                {licenses != null && (
+                  <span className="rounded-full bg-white/70 px-1.5 py-0.5 text-[11px] font-semibold tabular-nums text-indigo-600">
+                    {licenses.toLocaleString("en-IN")}
+                  </span>
+                )}
               </span>
             ))}
           </div>

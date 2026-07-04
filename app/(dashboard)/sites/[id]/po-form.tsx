@@ -36,6 +36,8 @@ export type ExistingPo = {
   contract_time_id: string | null;
   site_ids: string[];
   module_ids: string[];
+  // License count per covered module id (null = not recorded).
+  module_license_counts?: Record<string, number | null>;
   line_items: { description: string; qty: number; unit_price_paise: number }[];
   attachment: { filename: string; url: string | null } | null;
 };
@@ -115,6 +117,16 @@ function PoFormDialog({
     existing ? existing.site_ids : [siteId], // default-cover the site we came from
   );
   const [moduleIds, setModuleIds] = useState<string[]>(existing?.module_ids ?? []);
+  // Text-backed license count per module id (kept as strings for the inputs;
+  // "" means not recorded). Seeded from the existing PO's stored counts.
+  const [moduleLicenses, setModuleLicenses] = useState<Record<string, string>>(() => {
+    const counts = existing?.module_license_counts ?? {};
+    return Object.fromEntries(
+      Object.entries(counts)
+        .filter(([, v]) => v != null)
+        .map(([k, v]) => [k, String(v)]),
+    );
+  });
   const [rows, setRows] = useState<LineRow[]>(
     existing ? rowsFromExisting(existing) : [blankRow()],
   );
@@ -158,6 +170,12 @@ function PoFormDialog({
       contractTimeId: contractTimeId || null,
       siteIds,
       moduleIds,
+      moduleLicenseCounts: Object.fromEntries(
+        moduleIds.map((id) => {
+          const raw = moduleLicenses[id]?.trim() ?? "";
+          return [id, raw === "" ? null : Number(raw)];
+        }),
+      ),
       lineItems: rows.map((r) => ({
         description: r.description,
         qty: Number(r.qty),
@@ -371,24 +389,46 @@ function PoFormDialog({
             </p>
           </div>
 
-          {/* Modules (multi-select) */}
+          {/* Modules (multi-select, with per-module license count) */}
           <div className="flex flex-col gap-1.5">
             <Label>Modules covered</Label>
-            <div className="flex flex-wrap gap-x-4 gap-y-1.5 rounded-lg border border-slate-200 p-2.5">
+            <div className="flex flex-col gap-1.5 rounded-lg border border-slate-200 p-2.5">
               {moduleOptions.length === 0 && (
                 <p className="text-xs text-slate-400">No active modules.</p>
               )}
-              {moduleOptions.map((m) => (
-                <label key={m.id} className="flex items-center gap-2 text-sm text-slate-700">
-                  <input
-                    type="checkbox"
-                    checked={moduleIds.includes(m.id)}
-                    onChange={() => toggle(moduleIds, setModuleIds, m.id)}
-                    className="size-3.5 rounded border-slate-300"
-                  />
-                  {m.name}
-                </label>
-              ))}
+              {moduleOptions.map((m) => {
+                const checked = moduleIds.includes(m.id);
+                return (
+                  <div key={m.id} className="flex items-center gap-3">
+                    <label className="flex flex-1 items-center gap-2 text-sm text-slate-700">
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        onChange={() => toggle(moduleIds, setModuleIds, m.id)}
+                        className="size-3.5 rounded border-slate-300"
+                      />
+                      {m.name}
+                    </label>
+                    {checked && (
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          step={1}
+                          inputMode="numeric"
+                          placeholder="—"
+                          value={moduleLicenses[m.id] ?? ""}
+                          onChange={(e) =>
+                            setModuleLicenses((prev) => ({ ...prev, [m.id]: e.target.value }))
+                          }
+                          className="h-8 w-20 rounded-md border border-slate-300 px-2 text-right text-sm tabular-nums outline-none focus:border-indigo-400 focus:ring-1 focus:ring-indigo-200"
+                        />
+                        <span className="text-xs text-slate-400">licenses</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           </div>
 
