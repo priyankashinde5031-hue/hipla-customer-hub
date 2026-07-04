@@ -341,6 +341,44 @@ export default async function SitePage({
     .map((r) => `${spoxCounts[r]} ${spoxRoleLabels[r]}`)
     .join(" · ");
 
+  // Implementation projects: card summary (counts by computed status) AND the
+  // per-PO go-live anchor for renewals. Each project can link a PO; that
+  // project's Stage-4 go-live date drives that PO's renewal dates (resolved
+  // with owner) — falling back to the site's go_live_date when unlinked.
+  const { data: implProjects } = await supabase
+    .from("implementation_projects")
+    .select(
+      `overall_status, po_id,
+       stages:implementation_project_stages ( stage_number, data )`,
+    )
+    .eq("site_id", site.id);
+
+  const poGoLiveMap = new Map<string, string>();
+  for (const p of implProjects || []) {
+    if (!p.po_id) continue;
+    const stage4 = (p.stages || []).find((s) => s.stage_number === 4);
+    const goLive = (stage4?.data as { goLiveDate?: string } | null)?.goLiveDate;
+    // First linked project with a go-live wins (one project per PO expected).
+    if (goLive && !poGoLiveMap.has(p.po_id)) poGoLiveMap.set(p.po_id, goLive);
+  }
+
+  const implTotal = implProjects?.length ?? 0;
+  const implDone = (implProjects || []).filter(
+    (p) => p.overall_status === "completed",
+  ).length;
+  const implInProgress = (implProjects || []).filter(
+    (p) => p.overall_status === "in_progress",
+  ).length;
+  const implBreakdown = [
+    implDone ? `${implDone} completed` : null,
+    implInProgress ? `${implInProgress} in progress` : null,
+  ].filter(Boolean);
+  const implSummary =
+    implTotal === 0
+      ? "Scope, stages, and go-live tracking for this site."
+      : `${implTotal} project${implTotal === 1 ? "" : "s"}` +
+        (implBreakdown.length ? ` · ${implBreakdown.join(", ")}` : "");
+
   const invoicesByPo = new Map<string, typeof invoices>();
   for (const inv of invoices || []) {
     if (!inv.po_id) continue;
@@ -488,7 +526,12 @@ export default async function SitePage({
       const card: RenewalCardData = {
         id: r.id,
         yearNumber: r.year_number,
-        renewalDate: renewalDate(site.go_live_date, r.offset_months),
+        // Anchor to the go-live of the project linked to THIS PO; fall back to
+        // the site's go-live when no project is linked yet.
+        renewalDate: renewalDate(
+          poGoLiveMap.get(r.po_id) ?? site.go_live_date,
+          r.offset_months,
+        ),
         expectedValuePaise: r.expected_value_paise,
         renewalValuePaise: r.renewal_value_paise,
         renewalReceivedDate: r.renewal_received_date,
@@ -1103,11 +1146,17 @@ export default async function SitePage({
         Implementation, usage &amp; support
       </h2>
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <PlaceholderCard
+        <Link
+          href={`/sites/${site.id}/implementation`}
           id="implementation"
-          title="Implementation"
-          description="Scope, stages, and go-live tracking for this site."
-        />
+          className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        >
+          <h3 className="text-sm font-medium text-gray-900">Implementation</h3>
+          <p className="mt-1 text-sm text-slate-500">{implSummary}</p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">
+            Open implementation →
+          </p>
+        </Link>
         <Link
           href={`/sites/${site.id}/usage`}
           className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"

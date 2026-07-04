@@ -399,6 +399,65 @@ begin
 end $$;
 
 -- ---------------------------------------------------------------------
+-- Sample implementation project (spec §5.3) for Acme HQ, linked to the
+-- multi-site sample PO. Shows the 5-stage stepper with a mix of statuses
+-- (3 complete, 1 in progress, 1 not started) and — via Stage 4's go-live
+-- date — how a project anchors its LINKED PO's renewal dates (resolved
+-- with owner). The insert trigger auto-creates the 5 not_started stages;
+-- we then update them. Idempotent (guarded on project_code).
+-- ---------------------------------------------------------------------
+do $$
+declare
+  acme_org_id uuid;
+  hq_id uuid;
+  vms_id uuid;
+  ms_po_id uuid;
+  proj_id uuid;
+  go_live text := to_char(current_date - 30, 'YYYY-MM-DD');
+begin
+  if not exists (select 1 from implementation_projects where project_code = 'IMPL-SAMPLE-001') then
+    select id into acme_org_id from organizations where legal_name = 'Acme Corp Pvt Ltd';
+    select id into hq_id from sites where name = 'Acme Corp HQ - Mumbai';
+    select id into vms_id from modules where name = 'VMS with host';
+    select id into ms_po_id from purchase_orders where name = 'Acme multi-site rollout — VMS (sample)';
+
+    if acme_org_id is not null and hq_id is not null then
+      insert into implementation_projects (site_id, org_id, project_code, project_name, po_id)
+      values (hq_id, acme_org_id, 'IMPL-SAMPLE-001', 'Acme HQ — VMS onboarding (sample)', ms_po_id)
+      returning id into proj_id;
+
+      update implementation_project_stages set stage_status = 'complete',
+        data = jsonb_build_object(
+          'modulesPurchased', jsonb_build_array(vms_id::text),
+          'siteAddress', 'Level 12, Acme Tower, BKC, Mumbai 400051',
+          'paymentTerms', 'Net 30',
+          'connectedToOnboarding', 'yes')
+        where project_id = proj_id and stage_number = 1;
+
+      update implementation_project_stages set stage_status = 'complete',
+        data = jsonb_build_object(
+          'welcomeEmailSent', 'yes', 'scheduleDiscussed', 'yes', 'connectedOnCall', 'yes')
+        where project_id = proj_id and stage_number = 2;
+
+      update implementation_project_stages set stage_status = 'complete',
+        data = jsonb_build_object(
+          'notApplicable', true, 'welcomeFlyerRequested', 'yes', 'welcomeFlyerSent', 'yes')
+        where project_id = proj_id and stage_number = 3;
+
+      -- Go-live date set → this drives the linked PO's renewal dates. Left
+      -- in_progress (the go-live email proof file isn't attached in seed).
+      update implementation_project_stages set stage_status = 'in_progress',
+        data = jsonb_build_object(
+          'goLiveDate', go_live, 'scopeConfiguredPct', 100,
+          'pendingItems', 'Signage artwork sign-off pending')
+        where project_id = proj_id and stage_number = 4;
+
+      -- Stage 5 left not_started → overall_status computes to in_progress.
+    end if;
+  end if;
+end $$;
+
+-- ---------------------------------------------------------------------
 -- First admin account. Pre-provisioned so Priyanka can log in once auth
 -- is wired up; auth_user_id is linked automatically on first sign-in
 -- (see app/auth/callback/route.ts).
