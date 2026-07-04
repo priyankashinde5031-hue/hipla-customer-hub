@@ -8,6 +8,7 @@ import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
 import { PoTableRow } from "./po-table";
 import { SiteMetaCard } from "./site-meta-card";
 import { SiteStickyNav, type NavSection } from "./site-sticky-nav";
+import { ScopeChangesCard, type ScopeChangeRow } from "./scope-changes-view";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
 import { RecordPaymentButton } from "./payment-form";
 import { EditInvoiceButton } from "./invoice-edit-form";
@@ -82,33 +83,6 @@ function SummaryCard({
       {!isEmpty && context ? (
         <p className="mt-0.5 text-xs text-slate-500">{context}</p>
       ) : null}
-    </div>
-  );
-}
-
-// Modules 5–9 of the spec (Implementation, Usage, Support, SPOCs, Scope
-// Changes, Hardware) aren't built yet — CLAUDE.md says not to start them
-// until told. These render the Site 360 layout now; real data lands
-// module-by-module later, same as PO & Invoices did.
-function PlaceholderCard({
-  title,
-  description,
-  id,
-}: {
-  title: string;
-  description: string;
-  id?: string;
-}) {
-  return (
-    <div
-      id={id}
-      className="scroll-mt-24 rounded-xl border border-dashed border-gray-200 bg-white p-4 shadow-sm"
-    >
-      <h3 className="text-sm font-medium text-gray-900">{title}</h3>
-      <p className="mt-1 text-sm text-slate-400">{description}</p>
-      <p className="mt-3 text-xs font-medium uppercase tracking-wide text-slate-300">
-        Coming soon
-      </p>
     </div>
   );
 }
@@ -340,6 +314,29 @@ export default async function SitePage({
     .filter((r) => spoxCounts[r])
     .map((r) => `${spoxCounts[r]} ${spoxRoleLabels[r]}`)
     .join(" · ");
+
+  // Support ticket counts for the card summary (spec §5.9). Open = no close date.
+  const { data: supportTickets } = await supabase
+    .from("support_tickets")
+    .select("closed_date")
+    .eq("site_id", site.id)
+    .is("deleted_at", null);
+  const supportTotal = supportTickets?.length ?? 0;
+  const supportOpen = (supportTickets || []).filter((t) => !t.closed_date).length;
+
+  // Scope changes (spec §5.7) — site-scoped, live rows only (soft-deleted
+  // rows stay in the table but never surface). Approver + requester names are
+  // resolved via the internal_users FKs.
+  const { data: scopeChangesRaw } = await supabase
+    .from("scope_changes")
+    .select(
+      `id, description, change_date, impact, approver_id, status, created_at,
+       approver:internal_users!scope_changes_approver_id_fkey ( name ),
+       created_by_user:internal_users!scope_changes_created_by_fkey ( name )`,
+    )
+    .eq("site_id", site.id)
+    .is("deleted_at", null)
+    .order("created_at", { ascending: false });
 
   // Implementation projects: card summary (counts by computed status) AND the
   // per-PO go-live anchor for renewals. Each project can link a PO; that
@@ -626,6 +623,22 @@ export default async function SitePage({
       ? "No upcoming renewals"
       : null;
 
+  // Scope-change rows for the modal. Approver options reuse the active
+  // internal-users list already loaded for PO owners (ownersRes).
+  const flattenName = (v: { name: string } | { name: string }[] | null) =>
+    (Array.isArray(v) ? v[0] : v)?.name ?? null;
+  const scopeChanges: ScopeChangeRow[] = (scopeChangesRaw || []).map((sc) => ({
+    id: sc.id,
+    description: sc.description,
+    changeDate: sc.change_date,
+    impact: sc.impact,
+    approverId: sc.approver_id,
+    approverName: flattenName(sc.approver),
+    status: sc.status,
+    createdByName: flattenName(sc.created_by_user),
+    createdAt: sc.created_at,
+  }));
+
   // Anchor targets for the sticky sub-header nav (ids match the section markup).
   const navSections: NavSection[] = [
     { id: "overview", label: "Overview" },
@@ -636,6 +649,7 @@ export default async function SitePage({
     { id: "support", label: "Support" },
     { id: "contacts", label: "Contacts" },
     { id: "hardware", label: "Hardware" },
+    { id: "scope", label: "Scope" },
   ];
 
   return (
@@ -1167,11 +1181,21 @@ export default async function SitePage({
           </p>
           <p className="mt-3 text-xs font-medium text-indigo-600">Open usage →</p>
         </Link>
-        <PlaceholderCard
+        <Link
+          href={`/sites/${site.id}/support`}
           id="support"
-          title="Support"
-          description="Ticket volume and topics logged for this site."
-        />
+          className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        >
+          <h3 className="text-sm font-medium text-gray-900">Support</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {supportTotal === 0
+              ? "Log support tickets raised for this site."
+              : `${supportTotal} ticket${supportTotal === 1 ? "" : "s"}${
+                  supportOpen > 0 ? ` · ${supportOpen} open` : ""
+                }`}
+          </p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">Open support →</p>
+        </Link>
         <Link
           href={`/sites/${site.id}/spox`}
           id="contacts"
@@ -1196,9 +1220,12 @@ export default async function SitePage({
           </p>
           <p className="mt-3 text-xs font-medium text-indigo-600">Open hardware →</p>
         </Link>
-        <PlaceholderCard
-          title="Scope Changes"
-          description="Approved changes to this site's implementation scope."
+        <ScopeChangesCard
+          id="scope"
+          siteId={site.id}
+          scopeChanges={scopeChanges}
+          approvers={ownersRes.data ?? []}
+          canEdit={canEdit}
         />
       </div>
     </div>
