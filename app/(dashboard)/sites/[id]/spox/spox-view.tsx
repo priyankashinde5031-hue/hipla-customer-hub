@@ -13,15 +13,16 @@ import {
   deactivateSpox,
   deleteSpox,
   type SpoxInput,
-  type SpoxRole,
 } from "../spox-actions";
 
 export type TeamOption = { id: string; name: string };
 export type StaffOption = { id: string; name: string };
+export type RoleOption = { id: string; name: string; active: boolean };
 export type SpoxRow = {
   id: string;
   name: string;
-  role: SpoxRole;
+  roleId: string;
+  roleName: string;
   email: string | null;
   phone: string | null;
   designation: string | null;
@@ -36,16 +37,6 @@ export type SpoxRow = {
   leftAt: string | null;
 };
 
-const ROLE_META: { key: SpoxRole; label: string }[] = [
-  { key: "decision_maker", label: "Decision Maker" },
-  { key: "solution_approver", label: "Solution Approver" },
-  { key: "middle_user_manager", label: "Middle User/Manager" },
-  { key: "end_user", label: "End User" },
-];
-const ROLE_LABEL: Record<SpoxRole, string> = Object.fromEntries(
-  ROLE_META.map((r) => [r.key, r.label]),
-) as Record<SpoxRole, string>;
-
 const inputClass =
   "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
@@ -58,7 +49,7 @@ function initials(name: string): string {
 
 type FormState = {
   name: string;
-  role: SpoxRole;
+  roleId: string;
   email: string;
   phone: string;
   designation: string;
@@ -67,10 +58,14 @@ type FormState = {
   hasTakenTraining: boolean;
 };
 
-function emptyForm(teams: TeamOption[], role: SpoxRole = "decision_maker"): FormState {
+function emptyForm(
+  teams: TeamOption[],
+  roles: RoleOption[],
+  roleId?: string,
+): FormState {
   return {
     name: "",
-    role,
+    roleId: roleId ?? roles[0]?.id ?? "",
     email: "",
     phone: "",
     designation: "",
@@ -83,7 +78,7 @@ function emptyForm(teams: TeamOption[], role: SpoxRole = "decision_maker"): Form
 function toInput(form: FormState): SpoxInput {
   return {
     name: form.name,
-    role: form.role,
+    roleId: form.roleId,
     email: form.email || null,
     phone: form.phone || null,
     designation: form.designation || null,
@@ -98,12 +93,14 @@ export function SpoxView({
   spox,
   teams,
   staff,
+  roles,
   canEdit,
 }: {
   siteId: string;
   spox: SpoxRow[];
   teams: TeamOption[];
   staff: StaffOption[];
+  roles: RoleOption[];
   canEdit: boolean;
 }) {
   const [showAdd, setShowAdd] = useState(false);
@@ -116,7 +113,24 @@ export function SpoxView({
   const active = useMemo(() => spox.filter((s) => s.status === "active"), [spox]);
   const inactive = useMemo(() => spox.filter((s) => s.status === "inactive"), [spox]);
 
-  const countByRole = (role: SpoxRole) => active.filter((s) => s.role === role).length;
+  // Selectable roles for the add/edit forms — only active catalog roles.
+  const activeRoles = useMemo(() => roles.filter((r) => r.active), [roles]);
+
+  // Section list: every active role, plus any retired role that still has an
+  // active Spox on it — so nobody's contact is silently hidden.
+  const sectionRoles = useMemo(() => {
+    const list = [...activeRoles];
+    const shownIds = new Set(list.map((r) => r.id));
+    for (const s of active) {
+      if (!shownIds.has(s.roleId)) {
+        list.push({ id: s.roleId, name: s.roleName, active: false });
+        shownIds.add(s.roleId);
+      }
+    }
+    return list;
+  }, [activeRoles, active]);
+
+  const countByRole = (roleId: string) => active.filter((s) => s.roleId === roleId).length;
 
   const handleCreate = (input: SpoxInput) => {
     startTransition(async () => {
@@ -161,16 +175,16 @@ export function SpoxView({
     <div className="mt-6 space-y-6">
       {/* Stat row — active count per role */}
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-4">
-        {ROLE_META.map((r) => (
+        {sectionRoles.map((r) => (
           <div
-            key={r.key}
+            key={r.id}
             className="rounded-xl border border-gray-200 bg-white p-4 shadow-sm"
           >
             <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
-              {r.label}
+              {r.name}
             </p>
             <p className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">
-              {countByRole(r.key)}
+              {countByRole(r.id)}
             </p>
           </div>
         ))}
@@ -185,7 +199,8 @@ export function SpoxView({
           title="Add new Spox"
           teams={teams}
           staff={staff}
-          initial={emptyForm(teams)}
+          roles={activeRoles}
+          initial={emptyForm(teams, activeRoles)}
           submitLabel="Add Spox"
           pending={pending}
           onSubmit={handleCreate}
@@ -194,11 +209,11 @@ export function SpoxView({
       )}
 
       {/* Role sections */}
-      {ROLE_META.map((r) => {
-        const rows = active.filter((s) => s.role === r.key);
+      {sectionRoles.map((r) => {
+        const rows = active.filter((s) => s.roleId === r.id);
         return (
-          <section key={r.key}>
-            <h2 className="text-lg font-serif font-semibold text-gray-900">{r.label}</h2>
+          <section key={r.id}>
+            <h2 className="text-lg font-serif font-semibold text-gray-900">{r.name}</h2>
             {rows.length === 0 ? (
               <p className="mt-2 text-center text-sm italic text-slate-400">
                 No Spox in this role
@@ -212,9 +227,10 @@ export function SpoxView({
                       title="Edit Spox"
                       teams={teams}
                       staff={staff}
+                      roles={activeRoles}
                       initial={{
                         name: s.name,
-                        role: s.role,
+                        roleId: s.roleId,
                         email: s.email ?? "",
                         phone: s.phone ?? "",
                         designation: s.designation ?? "",
@@ -256,7 +272,7 @@ export function SpoxView({
               >
                 <div className="text-sm">
                   <span className="font-medium text-slate-700">{s.name}</span>
-                  <span className="text-slate-400"> · {ROLE_LABEL[s.role]}</span>
+                  <span className="text-slate-400"> · {s.roleName}</span>
                   {s.replacedByName && (
                     <span className="text-slate-500"> → replaced by {s.replacedByName}</span>
                   )}
@@ -282,13 +298,14 @@ export function SpoxView({
           siteId={siteId}
           spox={deactivating}
           candidates={active.filter(
-            (s) => s.id !== deactivating.id && s.role === deactivating.role,
+            (s) => s.id !== deactivating.id && s.roleId === deactivating.roleId,
           )}
           otherCandidates={active.filter(
-            (s) => s.id !== deactivating.id && s.role !== deactivating.role,
+            (s) => s.id !== deactivating.id && s.roleId !== deactivating.roleId,
           )}
           teams={teams}
           staff={staff}
+          roles={activeRoles}
           onClose={() => setDeactivating(null)}
         />
       )}
@@ -332,7 +349,7 @@ function SpoxCard({
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-sm font-medium text-gray-900">{spox.name}</span>
             <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-              {ROLE_LABEL[spox.role]}
+              {spox.roleName}
             </span>
             <span className="rounded-full bg-indigo-50 px-2 py-0.5 text-xs font-medium text-indigo-700">
               {spox.internalOwnerTeamName}
@@ -396,6 +413,7 @@ function SpoxForm({
   title,
   teams,
   staff,
+  roles,
   initial,
   submitLabel,
   pending,
@@ -405,6 +423,7 @@ function SpoxForm({
   title: string;
   teams: TeamOption[];
   staff: StaffOption[];
+  roles: RoleOption[];
   initial: FormState;
   submitLabel: string;
   pending: boolean;
@@ -415,6 +434,7 @@ function SpoxForm({
 
   const submit = () => {
     if (!form.name.trim()) return toast.error("Enter the contact's name.");
+    if (!form.roleId) return toast.error("Choose a role.");
     if (!form.internalOwnerTeamId) return toast.error("Choose an internal owner team.");
     onSubmit(toInput(form));
   };
@@ -433,13 +453,14 @@ function SpoxForm({
         </Field>
         <Field label="Role *">
           <select
-            value={form.role}
-            onChange={(e) => setForm((f) => ({ ...f, role: e.target.value as SpoxRole }))}
+            value={form.roleId}
+            onChange={(e) => setForm((f) => ({ ...f, roleId: e.target.value }))}
             className={inputClass}
           >
-            {ROLE_META.map((r) => (
-              <option key={r.key} value={r.key}>
-                {r.label}
+            {roles.length === 0 && <option value="">No roles available</option>}
+            {roles.map((r) => (
+              <option key={r.id} value={r.id}>
+                {r.name}
               </option>
             ))}
           </select>
@@ -526,6 +547,7 @@ function ReplacementDialog({
   otherCandidates,
   teams,
   staff,
+  roles,
   onClose,
 }: {
   siteId: string;
@@ -534,6 +556,7 @@ function ReplacementDialog({
   otherCandidates: SpoxRow[]; // other roles
   teams: TeamOption[];
   staff: StaffOption[];
+  roles: RoleOption[];
   onClose: () => void;
 }) {
   const [selected, setSelected] = useState("");
@@ -576,7 +599,7 @@ function ReplacementDialog({
         <p className="mt-1 text-sm text-slate-500">
           You must select a replacement before marking{" "}
           <span className="font-medium text-slate-700">{spox.name}</span> (
-          {ROLE_LABEL[spox.role]}) as left. Their record and contact details are kept.
+          {spox.roleName}) as left. Their record and contact details are kept.
         </p>
 
         {addingNew ? (
@@ -585,7 +608,8 @@ function ReplacementDialog({
               title="Add Spox & set as replacement"
               teams={teams}
               staff={staff}
-              initial={emptyForm(teams, spox.role)}
+              roles={roles}
+              initial={emptyForm(teams, roles, spox.roleId)}
               submitLabel="Add Spox & set as replacement"
               pending={pending}
               onSubmit={confirmNew}
@@ -616,12 +640,12 @@ function ReplacementDialog({
                 <option value="">Select a Spox</option>
                 {candidates.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} · {ROLE_LABEL[c.role]}
+                    {c.name} · {c.roleName}
                   </option>
                 ))}
                 {otherCandidates.map((c) => (
                   <option key={c.id} value={c.id}>
-                    {c.name} · {ROLE_LABEL[c.role]}
+                    {c.name} · {c.roleName}
                   </option>
                 ))}
                 <option value="__new__">+ Add new Spox…</option>

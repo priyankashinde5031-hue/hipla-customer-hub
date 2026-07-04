@@ -295,31 +295,35 @@ export default async function SitePage({
   const payments = paymentsQuery?.data ?? [];
 
   // Active Spox for the card summary (spec §4.1) — role breakdown at a glance.
+  // Roles are Settings-managed (spox_roles): label + display order come from the
+  // catalog, not a hardcoded map.
   const { data: activeSpox } = await supabase
     .from("spox")
-    .select("role")
+    .select("spox_role_id, spox_role:spox_roles ( name, sort_order )")
     .eq("site_id", site.id)
     .eq("status", "active");
-  const spoxRoleLabels: Record<string, string> = {
-    decision_maker: "Decision Maker",
-    solution_approver: "Solution Approver",
-    middle_user_manager: "Middle User/Manager",
-    end_user: "End User",
-  };
-  const spoxRoleOrder = [
-    "decision_maker",
-    "solution_approver",
-    "middle_user_manager",
-    "end_user",
-  ];
+  const flattenRole = <T,>(v: T | T[] | null): T | null =>
+    Array.isArray(v) ? (v[0] ?? null) : v;
+  const spoxRoleMeta = new Map<string, { name: string; sortOrder: number }>();
   const spoxCounts = (activeSpox || []).reduce<Record<string, number>>((acc, s) => {
-    acc[s.role] = (acc[s.role] || 0) + 1;
+    const role = flattenRole(s.spox_role);
+    const key = s.spox_role_id;
+    if (!spoxRoleMeta.has(key)) {
+      spoxRoleMeta.set(key, {
+        name: role?.name ?? "—",
+        sortOrder: role?.sort_order ?? 0,
+      });
+    }
+    acc[key] = (acc[key] || 0) + 1;
     return acc;
   }, {});
   const spoxTotal = activeSpox?.length ?? 0;
-  const spoxBreakdown = spoxRoleOrder
-    .filter((r) => spoxCounts[r])
-    .map((r) => `${spoxCounts[r]} ${spoxRoleLabels[r]}`)
+  const spoxBreakdown = Object.keys(spoxCounts)
+    .sort(
+      (a, b) =>
+        (spoxRoleMeta.get(a)?.sortOrder ?? 0) - (spoxRoleMeta.get(b)?.sortOrder ?? 0),
+    )
+    .map((key) => `${spoxCounts[key]} ${spoxRoleMeta.get(key)?.name ?? "—"}`)
     .join(" · ");
 
   // Support ticket counts for the card summary (spec §5.9). Open = no close date.
