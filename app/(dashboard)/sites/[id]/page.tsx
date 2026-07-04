@@ -335,6 +335,14 @@ export default async function SitePage({
   const supportTotal = supportTickets?.length ?? 0;
   const supportOpen = (supportTickets || []).filter((t) => !t.closed_date).length;
 
+  // Agreements count for the card summary — live rows only (soft-deleted hidden).
+  const { count: agreementsCount } = await supabase
+    .from("agreements")
+    .select("id", { count: "exact", head: true })
+    .eq("site_id", site.id)
+    .is("deleted_at", null);
+  const agreementsTotal = agreementsCount ?? 0;
+
   // Scope changes (spec §5.7) — site-scoped, live rows only (soft-deleted
   // rows stay in the table but never surface). Approver + requester names are
   // resolved via the internal_users FKs.
@@ -663,6 +671,7 @@ export default async function SitePage({
     { id: "contacts", label: "Contacts" },
     { id: "hardware", label: "Hardware" },
     { id: "scope", label: "Scope" },
+    { id: "agreements", label: "Agreements" },
     { id: "addresses", label: "Addresses" },
   ];
 
@@ -1234,6 +1243,35 @@ export default async function SitePage({
           approvers={ownersRes.data ?? []}
           canEdit={canEdit}
         />
+        <Link
+          href={`/sites/${site.id}/agreements`}
+          id="agreements"
+          className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
+        >
+          <h3 className="text-sm font-medium text-gray-900">Agreements</h3>
+          <p className="mt-1 text-sm text-slate-500">
+            {agreementsTotal === 0
+              ? "Store signed agreements for this site — NDAs, service agreements, and more."
+              : `${agreementsTotal} agreement${agreementsTotal === 1 ? "" : "s"} on file.`}
+          </p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">Open agreements →</p>
+        </Link>
+        {/* Scope & Flow — placeholder for a later milestone. Not a link (nothing
+            to open yet); styled muted so it clearly reads as coming soon. */}
+        <div
+          id="scope-and-flow"
+          className="scroll-mt-24 block rounded-xl border border-dashed border-gray-200 bg-white/60 p-4 shadow-sm"
+        >
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-medium text-gray-500">Scope &amp; Flow</h3>
+            <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-500">
+              Coming soon
+            </span>
+          </div>
+          <p className="mt-1 text-sm text-slate-400">
+            The scope and flow for this site will live here. We&apos;ll build it later.
+          </p>
+        </div>
       </div>
 
       <h2
