@@ -30,28 +30,150 @@ export type SupportTicketRow = {
   closedDate: string | null;
 };
 
+export type FinancialYearOption = { id: string; name: string };
+
 // Status is derived, never stored: open until it has a close date.
 const isOpen = (t: SupportTicketRow) => !t.closedDate;
+
+const filterSelectClass =
+  "h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+
+// Indian financial year: 1 Apr → 31 Mar. Parse "FY2025-26" → start year 2025.
+// Returns null if the name isn't in that shape (so it just won't filter).
+function fyStartYear(name: string): number | null {
+  const m = /(\d{4})/.exec(name);
+  return m ? Number(m[1]) : null;
+}
+
+// Months in financial-year order (Apr first) for the dropdown; value is the
+// calendar month number 1–12.
+const FY_MONTHS = [
+  { value: 4, label: "April" },
+  { value: 5, label: "May" },
+  { value: 6, label: "June" },
+  { value: 7, label: "July" },
+  { value: 8, label: "August" },
+  { value: 9, label: "September" },
+  { value: 10, label: "October" },
+  { value: 11, label: "November" },
+  { value: 12, label: "December" },
+  { value: 1, label: "January" },
+  { value: 2, label: "February" },
+  { value: 3, label: "March" },
+];
+
+// A ticket's opened_date (YYYY-MM-DD) → { year, month }.
+function openedParts(t: SupportTicketRow) {
+  const m = /^(\d{4})-(\d{2})-/.exec(t.openedDate);
+  return m ? { year: Number(m[1]), month: Number(m[2]) } : null;
+}
+
+// True if the ticket's opened date falls inside the given FY start year
+// (Apr of startYear → Mar of startYear+1).
+function inFinancialYear(t: SupportTicketRow, startYear: number): boolean {
+  const p = openedParts(t);
+  if (!p) return false;
+  return (
+    (p.year === startYear && p.month >= 4) ||
+    (p.year === startYear + 1 && p.month <= 3)
+  );
+}
 
 export function SupportView({
   siteId,
   tickets,
   canEdit,
+  financialYears,
 }: {
   siteId: string;
   tickets: SupportTicketRow[];
   canEdit: boolean;
+  financialYears: FinancialYearOption[];
 }) {
   // null = closed dialog; "new" = logging; a row = editing that ticket.
   const [dialog, setDialog] = useState<SupportTicketRow | "new" | null>(null);
 
-  const openCount = tickets.filter(isOpen).length;
-  const closedCount = tickets.length - openCount;
+  // Filters (by opened date). "" = no filter.
+  const [fyId, setFyId] = useState("");
+  const [month, setMonth] = useState("");
+
+  const selectedFy = financialYears.find((fy) => fy.id === fyId) ?? null;
+  const fyStart = selectedFy ? fyStartYear(selectedFy.name) : null;
+  const monthNum = month ? Number(month) : null;
+
+  const filtered = tickets.filter((t) => {
+    if (fyStart !== null && !inFinancialYear(t, fyStart)) return false;
+    if (monthNum !== null) {
+      const p = openedParts(t);
+      if (!p) return false;
+      // If a FY is also chosen, resolve the month to its concrete year within
+      // that FY (Apr–Dec → FY start year, Jan–Mar → the next year); otherwise
+      // match the calendar month in any year.
+      if (fyStart !== null) {
+        const targetYear = monthNum >= 4 ? fyStart : fyStart + 1;
+        if (p.year !== targetYear || p.month !== monthNum) return false;
+      } else if (p.month !== monthNum) {
+        return false;
+      }
+    }
+    return true;
+  });
+
+  const isFiltered = fyId !== "" || month !== "";
+  const openCount = filtered.filter(isOpen).length;
+  const closedCount = filtered.length - openCount;
 
   return (
     <section className="mt-6">
-      {canEdit && (
-        <div className="flex items-center justify-end">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        {/* Filters — by ticket opened date */}
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="filter-fy">Financial year</Label>
+            <select
+              id="filter-fy"
+              value={fyId}
+              onChange={(e) => setFyId(e.target.value)}
+              className={filterSelectClass}
+            >
+              <option value="">All financial years</option>
+              {financialYears.map((fy) => (
+                <option key={fy.id} value={fy.id}>
+                  {fy.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="filter-month">Month</Label>
+            <select
+              id="filter-month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className={filterSelectClass}
+            >
+              <option value="">All months</option>
+              {FY_MONTHS.map((m) => (
+                <option key={m.value} value={m.value}>
+                  {m.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          {isFiltered && (
+            <button
+              onClick={() => {
+                setFyId("");
+                setMonth("");
+              }}
+              className="mb-1 rounded text-sm text-indigo-600 hover:text-indigo-700 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/40"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+
+        {canEdit && (
           <Button
             size="sm"
             className="gap-1.5 bg-indigo-600 text-white hover:bg-indigo-700"
@@ -60,12 +182,15 @@ export function SupportView({
             <Plus className="size-4" />
             Log Support Ticket
           </Button>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Summary cards */}
+      {/* Summary cards — reflect the current filter */}
       <div className="mt-3 grid grid-cols-3 gap-3 sm:max-w-lg">
-        <CountCard label="Total tickets" value={tickets.length} />
+        <CountCard
+          label={isFiltered ? "Tickets (filtered)" : "Total tickets"}
+          value={filtered.length}
+        />
         <CountCard label="Open" value={openCount} />
         <CountCard label="Closed" value={closedCount} />
       </div>
@@ -83,15 +208,18 @@ export function SupportView({
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
-            {tickets.length === 0 ? (
+            {filtered.length === 0 ? (
               <tr>
                 <td colSpan={canEdit ? 6 : 5} className="px-3 py-6 text-slate-400">
-                  No support tickets logged for this site yet
-                  {canEdit ? " — log the first one above." : "."}
+                  {tickets.length === 0
+                    ? `No support tickets logged for this site yet${
+                        canEdit ? " — log the first one above." : "."
+                      }`
+                    : "No tickets match these filters."}
                 </td>
               </tr>
             ) : (
-              tickets.map((t) => (
+              filtered.map((t) => (
                 <tr key={t.id}>
                   <td className="px-3 py-2 text-slate-700">{t.ticketRef || "—"}</td>
                   <td className="max-w-sm px-3 py-2 text-slate-700">{t.subject}</td>

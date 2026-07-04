@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
-import { SupportView, type SupportTicketRow } from "./support-view";
+import { SupportView, type SupportTicketRow, type FinancialYearOption } from "./support-view";
 
 export default async function SiteSupportPage({
   params,
@@ -31,13 +31,22 @@ export default async function SiteSupportPage({
     ? site.organization[0]
     : site.organization;
 
-  const { data: ticketsRaw } = await supabase
-    .from("support_tickets")
-    .select("id, ticket_ref, subject, opened_date, closed_date")
-    .eq("site_id", id)
-    .is("deleted_at", null)
-    .order("opened_date", { ascending: false })
-    .order("created_at", { ascending: false });
+  const [{ data: ticketsRaw }, { data: financialYearsRaw }] = await Promise.all([
+    supabase
+      .from("support_tickets")
+      .select("id, ticket_ref, subject, opened_date, closed_date")
+      .eq("site_id", id)
+      .is("deleted_at", null)
+      .order("opened_date", { ascending: false })
+      .order("created_at", { ascending: false }),
+    // Same Settings-managed catalog the PO form uses (e.g. FY2025-26). Only
+    // active ones are offered as filters.
+    supabase
+      .from("financial_years")
+      .select("id, name")
+      .eq("active", true)
+      .order("name"),
+  ]);
 
   const tickets: SupportTicketRow[] = (ticketsRaw || []).map((t) => ({
     id: t.id,
@@ -46,6 +55,10 @@ export default async function SiteSupportPage({
     openedDate: t.opened_date,
     closedDate: t.closed_date,
   }));
+
+  const financialYears: FinancialYearOption[] = (financialYearsRaw || []).map(
+    (fy) => ({ id: fy.id, name: fy.name }),
+  );
 
   const orgLabel =
     organization?.brand_name || organization?.legal_name || "Organization";
@@ -72,7 +85,12 @@ export default async function SiteSupportPage({
         opened, and when they closed.
       </p>
 
-      <SupportView siteId={site.id} tickets={tickets} canEdit={canEdit} />
+      <SupportView
+        siteId={site.id}
+        tickets={tickets}
+        canEdit={canEdit}
+        financialYears={financialYears}
+      />
     </div>
   );
 }
