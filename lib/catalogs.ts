@@ -100,7 +100,27 @@ export const CATALOGS: CatalogConfig[] = [
     description:
       "The renewal basis for a PO line item — e.g. Annually — 12% escalation, Hardware — one-time, Hardware with AMC.",
     uniqueField: "name",
-    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+    fields: [
+      { key: "name", label: "Name", type: "text", required: true },
+      {
+        key: "logic",
+        label: "Renewal logic",
+        type: "select",
+        required: true,
+        options: [
+          "Recurring — with escalation",
+          "Recurring — flat",
+          "One-time — no renewal",
+          "AMC — annual maintenance",
+        ],
+      },
+      {
+        key: "escalation_pct",
+        label: "Escalation % (per year)",
+        type: "number",
+        required: false,
+      },
+    ],
   },
   {
     slug: "po-types",
