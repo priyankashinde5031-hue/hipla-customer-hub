@@ -73,6 +73,36 @@ export const CATALOGS: CatalogConfig[] = [
     fields: [{ key: "name", label: "Name", type: "text", required: true }],
   },
   {
+    slug: "products",
+    table: "products",
+    label: "Products",
+    singular: "Product",
+    description:
+      "The catalogue of things that can be purchased on a PO line item — the “what is being purchased” list.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
+  {
+    slug: "product-categories",
+    table: "product_categories",
+    label: "Product Categories",
+    singular: "Product Category",
+    description:
+      "How a PO line item is classified — e.g. Software, Hardware, Change Request.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
+  {
+    slug: "renewal-terms",
+    table: "renewal_terms",
+    label: "Renewal Terms",
+    singular: "Renewal Term",
+    description:
+      "The renewal basis for a PO line item — e.g. Annually — 12% escalation, Hardware — one-time, Hardware with AMC.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
+  {
     slug: "po-types",
     table: "po_types",
     label: "PO Types",

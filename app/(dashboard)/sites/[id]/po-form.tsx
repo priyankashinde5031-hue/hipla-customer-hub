@@ -28,7 +28,6 @@ export type ExistingPo = {
   po_number: string;
   name: string | null;
   po_type_id: string | null;
-  cost_type_id: string | null;
   po_received_date: string | null;
   financial_year_id: string | null;
   gst_percent: number | null;
@@ -38,11 +37,31 @@ export type ExistingPo = {
   module_ids: string[];
   // License count per covered module id (null = not recorded).
   module_license_counts?: Record<string, number | null>;
-  line_items: { description: string; qty: number; unit_price_paise: number }[];
+  line_items: {
+    description: string;
+    qty: number;
+    unit_price_paise: number;
+    product_id: string | null;
+    product_category_id: string | null;
+    cost_type_id: string | null;
+    renewal_term_id: string | null;
+  }[];
   attachment: { filename: string; url: string | null } | null;
 };
 
-type LineRow = { key: string; description: string; qty: string; unitPrice: string };
+// Sentinel product-select value meaning "not in the catalogue — type it".
+const CUSTOM_PRODUCT = "__custom__";
+
+type LineRow = {
+  key: string;
+  productId: string; // "" | product uuid | CUSTOM_PRODUCT
+  description: string;
+  categoryId: string;
+  costTypeId: string;
+  renewalTermId: string;
+  qty: string;
+  unitPrice: string;
+};
 
 const inputClass =
   "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -58,16 +77,34 @@ function formatRupees(paise: number): string {
 let rowCounter = 0;
 function blankRow(): LineRow {
   rowCounter += 1;
-  return { key: `r${rowCounter}`, description: "", qty: "1", unitPrice: "" };
+  return {
+    key: `r${rowCounter}`,
+    productId: "",
+    description: "",
+    categoryId: "",
+    costTypeId: "",
+    renewalTermId: "",
+    qty: "1",
+    unitPrice: "",
+  };
 }
 
-function rowsFromExisting(po: ExistingPo): LineRow[] {
+function rowsFromExisting(po: ExistingPo, productIds: Set<string>): LineRow[] {
   if (!po.line_items.length) return [blankRow()];
   return po.line_items.map((li) => {
     rowCounter += 1;
+    // If the stored product is still an active catalogue item, select it;
+    // otherwise fall back to the free-text "custom" mode so the description
+    // (which is always stored) stays visible and editable.
+    const productId =
+      li.product_id && productIds.has(li.product_id) ? li.product_id : CUSTOM_PRODUCT;
     return {
       key: `e${rowCounter}`,
+      productId,
       description: li.description,
+      categoryId: li.product_category_id ?? "",
+      costTypeId: li.cost_type_id ?? "",
+      renewalTermId: li.renewal_term_id ?? "",
       qty: String(li.qty),
       unitPrice: String(li.unit_price_paise / 100),
     };
@@ -81,6 +118,9 @@ function PoFormDialog({
   siteId,
   poTypeOptions,
   costTypeOptions,
+  productOptions,
+  productCategoryOptions,
+  renewalTermOptions,
   financialYearOptions,
   paymentTermsOptions,
   contractTimeOptions,
@@ -94,6 +134,9 @@ function PoFormDialog({
   siteId: string;
   poTypeOptions: Option[];
   costTypeOptions: Option[];
+  productOptions: Option[];
+  productCategoryOptions: Option[];
+  renewalTermOptions: Option[];
   financialYearOptions: Option[];
   paymentTermsOptions: Option[];
   contractTimeOptions: Option[];
@@ -102,10 +145,13 @@ function PoFormDialog({
   existing: ExistingPo | null;
 }) {
   const isEdit = Boolean(existing);
+  const productIds = useMemo(
+    () => new Set(productOptions.map((p) => p.id)),
+    [productOptions],
+  );
 
   const [name, setName] = useState(existing?.name ?? "");
   const [poTypeId, setPoTypeId] = useState(existing?.po_type_id ?? "");
-  const [costTypeId, setCostTypeId] = useState(existing?.cost_type_id ?? "");
   const [poDate, setPoDate] = useState(existing?.po_received_date ?? "");
   const [financialYearId, setFinancialYearId] = useState(existing?.financial_year_id ?? "");
   const [gstPercent, setGstPercent] = useState(
@@ -128,7 +174,7 @@ function PoFormDialog({
     );
   });
   const [rows, setRows] = useState<LineRow[]>(
-    existing ? rowsFromExisting(existing) : [blankRow()],
+    existing ? rowsFromExisting(existing, productIds) : [blankRow()],
   );
   const fileRef = useRef<HTMLInputElement>(null);
   const [isPending, startTransition] = useTransition();
@@ -158,11 +204,23 @@ function PoFormDialog({
     setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...patch } : r)));
   }
 
+  // Picking a catalogue product fills the description from its name; switching
+  // to "custom" clears it so the user can type a one-off item.
+  function changeProduct(key: string, value: string) {
+    if (value === CUSTOM_PRODUCT) {
+      updateRow(key, { productId: CUSTOM_PRODUCT, description: "" });
+    } else if (value === "") {
+      updateRow(key, { productId: "", description: "" });
+    } else {
+      const name = productOptions.find((p) => p.id === value)?.name ?? "";
+      updateRow(key, { productId: value, description: name });
+    }
+  }
+
   function submit() {
     const input: PoFormInput = {
       name,
       poTypeId: poTypeId || null,
-      costTypeId: costTypeId || null,
       poReceivedDate: poDate || null,
       financialYearId: financialYearId || null,
       gstPercent: gstPercent.trim() === "" ? null : Number(gstPercent),
@@ -180,6 +238,10 @@ function PoFormDialog({
         description: r.description,
         qty: Number(r.qty),
         unitPriceRupees: r.unitPrice.trim() === "" ? 0 : Number(r.unitPrice),
+        productId: r.productId && r.productId !== CUSTOM_PRODUCT ? r.productId : null,
+        productCategoryId: r.categoryId || null,
+        costTypeId: r.costTypeId || null,
+        renewalTermId: r.renewalTermId || null,
       })),
     };
 
@@ -219,7 +281,7 @@ function PoFormDialog({
 
   return (
     <Dialog open={open} onOpenChange={(o) => !o && onClose()}>
-      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-3xl">
+      <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-5xl">
         <DialogHeader>
           <DialogTitle>{isEdit ? "Edit purchase order" : "Add purchase order"}</DialogTitle>
           <DialogDescription>
@@ -255,22 +317,6 @@ function PoFormDialog({
               >
                 <option value="">—</option>
                 {poTypeOptions.map((o) => (
-                  <option key={o.id} value={o.id}>
-                    {o.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="cost-type">Cost type</Label>
-              <select
-                id="cost-type"
-                value={costTypeId}
-                onChange={(e) => setCostTypeId(e.target.value)}
-                className={inputClass}
-              >
-                <option value="">—</option>
-                {costTypeOptions.map((o) => (
                   <option key={o.id} value={o.id}>
                     {o.name}
                   </option>
@@ -467,11 +513,14 @@ function PoFormDialog({
                 Add line item
               </Button>
             </div>
-            <div className="overflow-hidden rounded-lg border border-slate-200">
-              <table className="w-full text-sm">
+            <div className="overflow-x-auto rounded-lg border border-slate-200">
+              <table className="w-full min-w-[960px] text-sm">
                 <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
                   <tr>
-                    <th className="px-2 py-1.5 text-left font-medium">Description</th>
+                    <th className="px-2 py-1.5 text-left font-medium">Product</th>
+                    <th className="px-2 py-1.5 text-left font-medium">Category</th>
+                    <th className="px-2 py-1.5 text-left font-medium">Cost type</th>
+                    <th className="px-2 py-1.5 text-left font-medium">Renewal term</th>
                     <th className="px-2 py-1.5 text-right font-medium">Qty</th>
                     <th className="px-2 py-1.5 text-right font-medium">Unit price (₹)</th>
                     <th className="px-2 py-1.5 text-right font-medium">Amount</th>
@@ -486,14 +535,75 @@ function PoFormDialog({
                       Number.isFinite(qty) && qty > 0 && Number.isFinite(price) && price >= 0;
                     const amount = valid ? Math.round(qty * Math.round(price * 100)) : 0;
                     return (
-                      <tr key={r.key}>
+                      <tr key={r.key} className="align-top">
                         <td className="px-2 py-1">
-                          <input
-                            value={r.description}
-                            onChange={(e) => updateRow(r.key, { description: e.target.value })}
-                            placeholder="What is being purchased"
+                          <select
+                            value={r.productId}
+                            onChange={(e) => changeProduct(r.key, e.target.value)}
                             className={`${inputClass} w-full`}
-                          />
+                          >
+                            <option value="">Select…</option>
+                            {productOptions.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name}
+                              </option>
+                            ))}
+                            <option value={CUSTOM_PRODUCT}>Custom / other…</option>
+                          </select>
+                          {r.productId === CUSTOM_PRODUCT && (
+                            <input
+                              value={r.description}
+                              onChange={(e) =>
+                                updateRow(r.key, { description: e.target.value })
+                              }
+                              placeholder="What is being purchased"
+                              className={`${inputClass} mt-1 w-full`}
+                            />
+                          )}
+                        </td>
+                        <td className="px-2 py-1">
+                          <select
+                            value={r.categoryId}
+                            onChange={(e) => updateRow(r.key, { categoryId: e.target.value })}
+                            className={`${inputClass} w-full`}
+                          >
+                            <option value="">—</option>
+                            {productCategoryOptions.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1">
+                          <select
+                            value={r.costTypeId}
+                            onChange={(e) => updateRow(r.key, { costTypeId: e.target.value })}
+                            className={`${inputClass} w-full`}
+                          >
+                            <option value="">—</option>
+                            {costTypeOptions.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name}
+                              </option>
+                            ))}
+                          </select>
+                        </td>
+                        <td className="px-2 py-1">
+                          <select
+                            value={r.renewalTermId}
+                            onChange={(e) =>
+                              updateRow(r.key, { renewalTermId: e.target.value })
+                            }
+                            className={`${inputClass} w-full`}
+                          >
+                            <option value="">—</option>
+                            {renewalTermOptions.map((o) => (
+                              <option key={o.id} value={o.id}>
+                                {o.name}
+                              </option>
+                            ))}
+                          </select>
                         </td>
                         <td className="px-2 py-1">
                           <input
@@ -502,7 +612,7 @@ function PoFormDialog({
                             step="any"
                             value={r.qty}
                             onChange={(e) => updateRow(r.key, { qty: e.target.value })}
-                            className={`${inputClass} w-20 text-right`}
+                            className={`${inputClass} w-16 text-right`}
                           />
                         </td>
                         <td className="px-2 py-1">
@@ -512,7 +622,7 @@ function PoFormDialog({
                             step="0.01"
                             value={r.unitPrice}
                             onChange={(e) => updateRow(r.key, { unitPrice: e.target.value })}
-                            className={`${inputClass} w-32 text-right`}
+                            className={`${inputClass} w-28 text-right`}
                           />
                         </td>
                         <td className="px-2 py-1 text-right tabular-nums text-slate-700">
@@ -538,7 +648,7 @@ function PoFormDialog({
                 </tbody>
                 <tfoot className="border-t border-slate-200 bg-slate-50">
                   <tr>
-                    <td colSpan={3} className="px-2 pt-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                    <td colSpan={6} className="px-2 pt-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       Subtotal (goods)
                     </td>
                     <td className="px-2 pt-2 text-right tabular-nums text-slate-600">
@@ -547,7 +657,7 @@ function PoFormDialog({
                     <td />
                   </tr>
                   <tr>
-                    <td colSpan={3} className="px-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                    <td colSpan={6} className="px-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       GST{gstAmountPaise > 0 || gstPercent.trim() ? ` (${gstPercent || "0"}%)` : ""}
                     </td>
                     <td className="px-2 text-right tabular-nums text-slate-600">
@@ -556,7 +666,7 @@ function PoFormDialog({
                     <td />
                   </tr>
                   <tr>
-                    <td colSpan={3} className="px-2 pb-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
+                    <td colSpan={6} className="px-2 pb-2 text-right text-xs font-medium uppercase tracking-wide text-gray-500">
                       PO total (computed)
                     </td>
                     <td className="px-2 pb-2 text-right font-semibold tabular-nums text-gray-900">
@@ -593,6 +703,9 @@ type SharedProps = {
   siteId: string;
   poTypeOptions: Option[];
   costTypeOptions: Option[];
+  productOptions: Option[];
+  productCategoryOptions: Option[];
+  renewalTermOptions: Option[];
   financialYearOptions: Option[];
   paymentTermsOptions: Option[];
   contractTimeOptions: Option[];
