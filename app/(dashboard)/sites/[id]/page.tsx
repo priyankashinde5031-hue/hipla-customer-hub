@@ -5,7 +5,7 @@ import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
 import { AddSiteButton } from "@/app/(dashboard)/organizations/[id]/site-form";
 import { AddPoButton, EditPoButton, type ExistingPo } from "./po-form";
-import { PoTableRow } from "./po-table";
+import { PoTableRow, PoFilterTable, type PoFilterItem } from "./po-table";
 import { SiteMetaCard } from "./site-meta-card";
 import { SiteStickyNav, type NavSection } from "./site-sticky-nav";
 import { ScopeChangesCard, type ScopeChangeRow } from "./scope-changes-view";
@@ -814,21 +814,8 @@ export default async function SitePage({
           No purchase orders recorded for this site yet.
         </p>
       ) : (
-        <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-          <table className="w-full border-collapse text-left [font-variant-numeric:tabular-nums]">
-            <thead className="sticky top-0 z-10 bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
-              <tr className="border-b border-slate-200">
-                <th className="py-2 pl-2 pr-3 font-medium">PO Name</th>
-                <th className="px-3 py-2 font-medium">Status</th>
-                <th className="px-3 py-2 font-medium">Product</th>
-                <th className="px-3 py-2 font-medium">Type</th>
-                <th className="px-3 py-2 font-medium">Renewal / Expiry</th>
-                <th className="px-3 py-2 text-right font-medium">Amount</th>
-                <th className="py-2 pl-3 pr-2 text-right font-medium">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-          {purchaseOrders.map((po) => {
+        <PoFilterTable
+          rows={purchaseOrders.map((po): PoFilterItem => {
             const poType = Array.isArray(po.po_type) ? po.po_type[0] : po.po_type;
             const costType = Array.isArray(po.cost_type)
               ? po.cost_type[0]
@@ -895,7 +882,11 @@ export default async function SitePage({
             const nextRenewalIso =
               renewalsByPo.get(po.id)?.[0]?.renewalDate ?? null;
 
-            return (
+            return {
+              id: po.id,
+              poType: poType?.name ?? null,
+              financialYear: financialYear?.name ?? null,
+              node: (
               <PoTableRow
                 key={po.id}
                 poNumber={po.name || po.po_number}
@@ -1137,11 +1128,10 @@ export default async function SitePage({
                   />
                 </div>
               </PoTableRow>
-            );
+              ),
+            };
           })}
-            </tbody>
-          </table>
-        </div>
+        />
       )}
 
       <h2

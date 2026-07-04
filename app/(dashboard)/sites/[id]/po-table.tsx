@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 
 // PO "status" pill = the PO Type catalog value (spec Appendix A.4 — New PO,
 // New PO on invoice, Renewal PO, …). We do NOT invent a lifecycle status.
@@ -134,4 +134,147 @@ export function PoTableRow({
       )}
     </>
   );
+}
+
+// One PO's already-rendered row plus the two values we filter on. The row is
+// built server-side (page.tsx) and passed in as an opaque node; we only need
+// its PO type and financial year to decide whether to show it.
+export type PoFilterItem = {
+  id: string;
+  /** PO Type catalog value, e.g. "New PO", "Renewal PO". Null = not set. */
+  poType: string | null;
+  /** Financial year label, e.g. "2024–25". Null = not set. */
+  financialYear: string | null;
+  node: ReactNode;
+};
+
+const ALL = "__all__";
+const UNSET = "__unset__";
+
+// The PO table with a filter bar above it. Type + Financial year are read from
+// the POs already entered; "All" (the default) shows everything. Both filters
+// combine (AND). Pure client-side — no refetch, just hides rows.
+export function PoFilterTable({ rows }: { rows: PoFilterItem[] }) {
+  const [typeFilter, setTypeFilter] = useState<string>(ALL);
+  const [yearFilter, setYearFilter] = useState<string>(ALL);
+
+  const typeOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(rows.map((r) => r.poType).filter((v): v is string => !!v)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [rows],
+  );
+  const yearOptions = useMemo(
+    () =>
+      Array.from(
+        new Set(rows.map((r) => r.financialYear).filter((v): v is string => !!v)),
+      ).sort((a, b) => a.localeCompare(b)),
+    [rows],
+  );
+  const hasUnsetType = useMemo(() => rows.some((r) => !r.poType), [rows]);
+  const hasUnsetYear = useMemo(() => rows.some((r) => !r.financialYear), [rows]);
+
+  const visible = rows.filter((r) => {
+    const typeOk =
+      typeFilter === ALL ||
+      (typeFilter === UNSET ? !r.poType : r.poType === typeFilter);
+    const yearOk =
+      yearFilter === ALL ||
+      (yearFilter === UNSET ? !r.financialYear : r.financialYear === yearFilter);
+    return typeOk && yearOk;
+  });
+
+  const selectClass =
+    "rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-slate-700 shadow-sm focus:border-indigo-500 focus:outline-none focus:ring-2 focus:ring-indigo-500/30";
+
+  return (
+    <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
+      <div className="flex flex-wrap items-end gap-4 border-b border-gray-100 px-4 py-3">
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+            PO type
+          </span>
+          <select
+            className={selectClass}
+            value={typeFilter}
+            onChange={(e) => setTypeFilter(e.target.value)}
+          >
+            <option value={ALL}>All types</option>
+            {typeOptions.map((t) => (
+              <option key={t} value={t}>
+                {t}
+              </option>
+            ))}
+            {hasUnsetType && <option value={UNSET}>— (not set)</option>}
+          </select>
+        </label>
+        <label className="flex flex-col gap-1">
+          <span className="text-xs font-medium uppercase tracking-wide text-gray-500">
+            Financial year
+          </span>
+          <select
+            className={selectClass}
+            value={yearFilter}
+            onChange={(e) => setYearFilter(e.target.value)}
+          >
+            <option value={ALL}>All years</option>
+            {yearOptions.map((y) => (
+              <option key={y} value={y}>
+                {y}
+              </option>
+            ))}
+            {hasUnsetYear && <option value={UNSET}>— (not set)</option>}
+          </select>
+        </label>
+        {(typeFilter !== ALL || yearFilter !== ALL) && (
+          <button
+            type="button"
+            onClick={() => {
+              setTypeFilter(ALL);
+              setYearFilter(ALL);
+            }}
+            className="pb-1.5 text-sm font-medium text-indigo-600 hover:text-indigo-700"
+          >
+            Clear filters
+          </button>
+        )}
+        <span className="ml-auto pb-1.5 text-sm text-slate-500 tabular-nums">
+          {visible.length} of {rows.length} POs
+        </span>
+      </div>
+      <table className="w-full border-collapse text-left [font-variant-numeric:tabular-nums]">
+        <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
+          <tr className="border-b border-slate-200">
+            <th className="py-2 pl-2 pr-3 font-medium">PO Name</th>
+            <th className="px-3 py-2 font-medium">Status</th>
+            <th className="px-3 py-2 font-medium">Product</th>
+            <th className="px-3 py-2 font-medium">Type</th>
+            <th className="px-3 py-2 font-medium">Renewal / Expiry</th>
+            <th className="px-3 py-2 text-right font-medium">Amount</th>
+            <th className="py-2 pl-3 pr-2 text-right font-medium">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          {visible.length === 0 ? (
+            <tr>
+              <td
+                colSpan={7}
+                className="px-4 py-8 text-center text-sm text-slate-400"
+              >
+                No purchase orders match the selected filters.
+              </td>
+            </tr>
+          ) : (
+            visible.map((r) => <PoRowFragment key={r.id}>{r.node}</PoRowFragment>)
+          )}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+// The row node is already a <> fragment of <tr>s; render it straight through.
+function PoRowFragment({ children }: { children: ReactNode }) {
+  return <>{children}</>;
 }
