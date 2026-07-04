@@ -30,6 +30,12 @@ export type UserOption = { id: string; name: string };
 const inputClass =
   "h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
+// Files upload through a Server Action (see agreement-actions). Keep this under
+// both Next's configured body limit (next.config: 5 MB) and Vercel's ~4.5 MB
+// platform request cap, with headroom for form overhead.
+const MAX_FILE_MB = 4;
+const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
+
 function today() {
   return new Date().toISOString().slice(0, 10);
 }
@@ -202,6 +208,11 @@ function AddAgreementDialog({
     if (!form.agreementTypeId) return toast.error("Choose an agreement type.");
     const file = fileRef.current?.files?.[0];
     if (!file || file.size === 0) return toast.error("Attach the agreement file.");
+    if (file.size > MAX_FILE_BYTES) {
+      return toast.error(
+        `That file is too large (max ${MAX_FILE_MB} MB). Please upload a smaller file.`,
+      );
+    }
 
     const data = new FormData();
     data.set("siteId", siteId);
@@ -276,6 +287,7 @@ function AddAgreementDialog({
               type="file"
               className="text-sm text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-indigo-50 file:px-3 file:py-1.5 file:text-sm file:font-medium file:text-indigo-700 hover:file:bg-indigo-100"
             />
+            <p className="text-xs text-slate-400">PDF or image, up to {MAX_FILE_MB} MB.</p>
           </div>
 
           <div className="flex flex-col gap-1.5">

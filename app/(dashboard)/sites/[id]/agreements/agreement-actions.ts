@@ -9,6 +9,13 @@ const canEditAgreements = canEditCatalogs;
 
 const BUCKET = "agreement-attachments";
 
+// Server-side backstop for the upload size. Mirrors the client cap (4 MB) and
+// stays under Next's configured body limit (next.config: 5 MB) and Vercel's
+// ~4.5 MB platform request cap. The client checks this too; this guards direct
+// callers and gives a friendly message instead of a raw body-limit crash.
+const MAX_FILE_MB = 4;
+const MAX_FILE_BYTES = MAX_FILE_MB * 1024 * 1024;
+
 type ActionResult = { error?: string; id?: string };
 
 async function writeAudit(
@@ -51,6 +58,9 @@ export async function createAgreement(formData: FormData): Promise<ActionResult>
   if (!agreementTypeId) return { error: "Choose an agreement type." };
   if (!(file instanceof File) || file.size === 0) {
     return { error: "Attach the agreement file." };
+  }
+  if (file.size > MAX_FILE_BYTES) {
+    return { error: `That file is too large (max ${MAX_FILE_MB} MB). Please upload a smaller file.` };
   }
 
   const supabase = await createClient();
