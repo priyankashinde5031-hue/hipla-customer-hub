@@ -65,3 +65,47 @@ export async function createOrganization(
   revalidatePath("/organizations");
   return { organizationId: inserted.id as string };
 }
+
+// Quick status change straight from the Organizations list. The list surfaces
+// only "Live" and "Churn" per the owner's ask; both map onto the existing
+// status enum (active / churned). Prospect stays a valid stored value but isn't
+// offered as a target here. // DECISION: spec §5.1
+export async function updateOrganizationStatus(
+  organizationId: string,
+  status: "active" | "churned",
+): Promise<{ error?: string }> {
+  const user = await getCurrentInternalUser();
+  if (!canEditOrganizations(user)) {
+    return { error: "You don't have permission to change status." };
+  }
+  if (status !== "active" && status !== "churned") {
+    return { error: "Invalid status." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: before } = await supabase
+    .from("organizations")
+    .select("status")
+    .eq("id", organizationId)
+    .maybeSingle();
+
+  const { error } = await supabase
+    .from("organizations")
+    .update({ status })
+    .eq("id", organizationId);
+
+  if (error) return { error: error.message };
+
+  await supabase.from("audit_log").insert({
+    actor_id: user!.id,
+    action: "update",
+    entity_type: "organization",
+    entity_id: organizationId,
+    before: before ?? null,
+    after: { status },
+  });
+
+  revalidatePath("/organizations");
+  return {};
+}

@@ -1,26 +1,37 @@
-import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { getOrganizationMetrics } from "@/lib/org-list-metrics";
 import { AddOrganizationButton } from "./organization-form";
-
-const STATUS_STYLES: Record<string, string> = {
-  active: "bg-green-50 text-green-700",
-  prospect: "bg-amber-50 text-amber-700",
-  churned: "bg-red-50 text-red-700",
-};
+import { OrganizationsList, type OrgRow } from "./organizations-list";
 
 export default async function OrganizationsPage() {
   const supabase = await createClient();
-  const [{ data: organizations, error }, user, { data: owners }] = await Promise.all([
+  const [{ data: organizations, error }, user, { data: owners }, metrics] = await Promise.all([
     supabase
       .from("organizations")
       .select("id, legal_name, brand_name, industry, status")
       .order("legal_name"),
     getCurrentInternalUser(),
     supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
+    getOrganizationMetrics(supabase),
   ]);
 
   const canEdit = canEditCatalogs(user);
+
+  const rows: OrgRow[] = (organizations ?? []).map((org) => {
+    const m = metrics.get(org.id);
+    return {
+      id: org.id,
+      legalName: org.legal_name,
+      brandName: org.brand_name,
+      industry: org.industry,
+      status: org.status,
+      totalPos: m?.totalPos ?? 0,
+      overdueRenewals: m?.overdueRenewals ?? 0,
+      overdueInvoices: m?.overdueInvoices ?? 0,
+      projectsInProgress: m?.projectsInProgress ?? 0,
+    };
+  });
 
   return (
     <div>
@@ -42,52 +53,7 @@ export default async function OrganizationsPage() {
         </p>
       )}
 
-      <div className="mt-6 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
-            <tr>
-              <th className="px-4 py-3 font-medium">Organization</th>
-              <th className="px-4 py-3 font-medium">Industry</th>
-              <th className="px-4 py-3 font-medium">Status</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {organizations?.map((org) => (
-              <tr key={org.id} className="hover:bg-slate-50">
-                <td className="px-4 py-3">
-                  <Link
-                    href={`/organizations/${org.id}`}
-                    className="rounded font-medium text-gray-900 hover:text-indigo-600 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2"
-                  >
-                    {org.brand_name || org.legal_name}
-                  </Link>
-                  <div className="text-xs text-slate-400">
-                    {org.legal_name}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {org.industry || "—"}
-                </td>
-                <td className="px-4 py-3">
-                  <span
-                    className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-                      STATUS_STYLES[org.status] ?? "bg-slate-100 text-slate-600"
-                    }`}
-                  >
-                    {org.status}
-                  </span>
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {organizations?.length === 0 && (
-          <p className="px-4 py-6 text-sm text-slate-500">
-            No organizations yet.
-          </p>
-        )}
-      </div>
+      <OrganizationsList organizations={rows} canEdit={canEdit} />
     </div>
   );
 }
