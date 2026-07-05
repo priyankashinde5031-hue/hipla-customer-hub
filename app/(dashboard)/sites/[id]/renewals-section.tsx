@@ -192,7 +192,12 @@ function RenewalCard({
         toast.error(result.error);
         return;
       }
-      toast.success(`Year ${renewal.yearNumber} marked as renewed.`);
+      const n = result.invoicesCreated ?? 0;
+      toast.success(
+        n > 0
+          ? `Year ${renewal.yearNumber} renewed — ${n} invoice${n === 1 ? "" : "s"} generated.`
+          : `Year ${renewal.yearNumber} marked as renewed.`,
+      );
     });
   }
 

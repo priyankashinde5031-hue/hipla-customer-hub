@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { buildSchedule, type PaymentTermSpec } from "@/lib/invoicing";
 
 // Same permission rule the rest of the commercial flow uses (admin/manager).
 const canEditCommercials = canEditCatalogs;
@@ -18,6 +19,108 @@ export type RenewalFieldInput = {
 };
 
 type ActionResult = { error?: string };
+
+// GST for one renewal invoice row, from the origin PO's GST % (entered, not
+// derived per line) — mirrors the PO invoice generator (invoice-form.tsx).
+function gstPaiseFor(amountPaise: number, gstPercent: number | null): number {
+  const pct = gstPercent ?? 0;
+  return pct > 0 ? Math.round((amountPaise * pct) / 100) : 0;
+}
+
+// Auto-generate the invoices for a renewal year, splitting its renewal value by
+// the payment term chosen on the renewal card — the SAME buildSchedule logic the
+// PO's "Generate invoices" uses. No-op (returns 0) when there's no payment term,
+// no renewal value, or invoices were already generated for this renewal.
+async function generateRenewalInvoices(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  actorId: string,
+  renewal: Record<string, unknown>,
+): Promise<number> {
+  const paymentTermsId = renewal.payment_terms_id as string | null;
+  const totalPaise = renewal.renewal_value_paise as number | null;
+  const poId = renewal.po_id as string | null;
+  const billedSiteId = renewal.anchor_site_id as string | null;
+  if (!paymentTermsId || !totalPaise || totalPaise <= 0 || !poId || !billedSiteId) {
+    return 0;
+  }
+
+  // Don't double-generate if this renewal already has invoices.
+  const { count: existing } = await supabase
+    .from("invoices")
+    .select("id", { count: "exact", head: true })
+    .eq("renewal_id", renewal.id as string);
+  if (existing && existing > 0) return 0;
+
+  // Payment term → schedule spec (mirrors page.tsx's PO term mapping).
+  const { data: term } = await supabase
+    .from("payment_terms")
+    .select(
+      "schedule_type, invoices_per_year, timing, billing_schedule_days, installments:payment_term_installments ( label, percent, sort_order )",
+    )
+    .eq("id", paymentTermsId)
+    .maybeSingle();
+  if (!term) return 0;
+
+  const spec: PaymentTermSpec = {
+    scheduleType: term.schedule_type === "milestone" ? "milestone" : "periodic",
+    invoicesPerYear: term.invoices_per_year ?? null,
+    timing: term.timing === "arrears" ? "arrears" : "advance",
+    billingScheduleDays: term.billing_schedule_days ?? null,
+    installments: ((term.installments ?? []) as { label: string; percent: number | string; sort_order: number }[])
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((i) => ({ label: i.label, percent: Number(i.percent) })),
+  };
+
+  // Origin PO for GST % and the contract linkage the invoice must trace to.
+  const { data: po } = await supabase
+    .from("purchase_orders")
+    .select("gst_percent, contract_id")
+    .eq("id", poId)
+    .maybeSingle();
+  const gstPercent = (po?.gst_percent as number | null) ?? null;
+
+  const generated = buildSchedule({
+    totalPaise,
+    term: spec,
+    contractMonths: (renewal.term_months as number | null) ?? 12,
+    // Periodic invoices space from the renewal received date; milestone dates
+    // stay blank for the user to fill (same as the PO flow).
+    startDate:
+      spec.scheduleType === "periodic" ? (renewal.renewal_received_date as string | null) : null,
+  });
+  if (generated.length === 0) return 0;
+
+  const payload = generated.map((g) => ({
+    po_id: poId,
+    contract_id: (po?.contract_id as string | null) ?? null,
+    billed_site_id: billedSiteId,
+    renewal_id: renewal.id as string,
+    amount_paise: g.amountPaise,
+    gst_amount_paise: gstPaiseFor(g.amountPaise, gstPercent),
+    issue_date: g.issueDate || null,
+    due_date: g.dueDate || null,
+    status: "raised",
+  }));
+
+  const { data: inserted, error } = await supabase
+    .from("invoices")
+    .insert(payload)
+    .select("id, invoice_number, amount_paise, gst_amount_paise, issue_date, due_date");
+  if (error || !inserted) return 0;
+
+  for (const inv of inserted) {
+    await supabase.from("audit_log").insert({
+      actor_id: actorId,
+      action: "create",
+      entity_type: "invoice",
+      entity_id: inv.id,
+      before: null,
+      after: { ...inv, po_id: poId, renewal_id: renewal.id, billed_site_id: billedSiteId },
+    });
+  }
+  return inserted.length;
+}
 
 function rupeesToPaise(rupees: number | null): number | null {
   if (rupees === null) return null;
@@ -93,10 +196,12 @@ export async function updateRenewal(
 }
 
 // Mark a renewal complete. Requires both a renewal value and a received date.
+// On completion, auto-generates the year's invoices from the renewal's payment
+// term (same split logic as the PO's "Generate invoices").
 export async function markRenewalDone(
   renewalId: string,
   siteId: string,
-): Promise<ActionResult> {
+): Promise<ActionResult & { invoicesCreated?: number }> {
   const user = await getCurrentInternalUser();
   if (!canEditCommercials(user)) {
     return { error: "You don't have permission to edit renewals." };
@@ -120,8 +225,12 @@ export async function markRenewalDone(
   if (error) return { error: error.message };
 
   await writeAudit(supabase, user!.id, "update", renewalId, before, { status: "renewed" });
+
+  // Split this year's renewal value into invoices by its payment term.
+  const invoicesCreated = await generateRenewalInvoices(supabase, user!.id, before);
+
   revalidatePath(`/sites/${siteId}`);
-  return {};
+  return { invoicesCreated };
 }
 
 // Upload a PO file for a specific renewal year. Bytes go to Supabase Storage;
