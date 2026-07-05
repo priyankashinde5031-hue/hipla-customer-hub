@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPaise } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
-import { deviationPercent } from "@/lib/renewals";
+import { deviationPercent, RENEWAL_LOGIC } from "@/lib/renewals";
 import {
   updateRenewal,
   markRenewalDone,
@@ -25,6 +25,18 @@ export type PaymentTermOption = {
   billing_schedule_days: number | null;
 };
 
+// One PO line's contribution to this renewal year, stamped from the original PO
+// using the same math the projection uses — so a reader sees how the expected
+// value was reached, line by line.
+export type RenewalBreakdownLine = {
+  description: string;
+  renewalTermName: string | null;
+  logic: string | null;
+  ratePct: number | null; // escalation or AMC %, whichever the logic uses
+  basePaise: number; // Year-1 line amount (qty × unit price)
+  valuePaise: number; // this line's contribution in this renewal year
+};
+
 export type RenewalCardData = {
   id: string;
   yearNumber: number;
@@ -35,6 +47,7 @@ export type RenewalCardData = {
   paymentTermsId: string | null;
   status: "upcoming" | "renewed";
   attachment: { filename: string; url: string | null } | null;
+  breakdown: RenewalBreakdownLine[]; // per-line calculation from the origin PO
 };
 
 // Shared field styling so every control in the card — <Input>, native <select>,
@@ -77,6 +90,24 @@ function describeSchedule(term: PaymentTermOption | undefined): string {
       : "Periodic";
   const timing = term.timing === "arrears" ? "in arrears" : "in advance";
   return `${freq}, ${timing}${due}`;
+}
+
+// Plain-English note for one breakdown line, e.g. "₹100.00 + 12%/yr" or
+// "One-time — not renewed". Explains, in words, how valuePaise was reached.
+function describeBreakdownLine(line: RenewalBreakdownLine): string {
+  const base = formatPaise(line.basePaise);
+  switch (line.logic) {
+    case RENEWAL_LOGIC.escalation:
+      return line.ratePct ? `${base} + ${line.ratePct}%/yr escalation` : `${base}, flat`;
+    case RENEWAL_LOGIC.amc:
+      return line.ratePct
+        ? `AMC ${line.ratePct}% of ${base}`
+        : `AMC, no % set`;
+    case RENEWAL_LOGIC.oneTime:
+      return `${base} one-time — not renewed`;
+    default:
+      return `${base}, flat`;
+  }
 }
 
 function RenewalCard({
@@ -295,6 +326,47 @@ function RenewalCard({
             </p>
           </div>
         </div>
+
+        {/* Expected value breakdown — how each PO line rolls into the total,
+            using the same logic that generated the projection. */}
+        {renewal.breakdown.length > 0 && (
+          <div className="mt-4 flex flex-col gap-1.5">
+            <Label>How the expected value is calculated</Label>
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-3 py-2 font-medium">Line item</th>
+                    <th className="px-3 py-2 font-medium">Renewal basis</th>
+                    <th className="px-3 py-2 text-right font-medium">Year {renewal.yearNumber} value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renewal.breakdown.map((line, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2 text-slate-700">{line.description}</td>
+                      <td className="px-3 py-2 text-slate-500">{describeBreakdownLine(line)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        {formatPaise(line.valuePaise)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-slate-200 bg-slate-50">
+                    <td className="px-3 py-2 font-medium text-gray-900" colSpan={2}>
+                      Expected renewal value
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900">
+                      {formatPaise(renewal.breakdown.reduce((s, l) => s + l.valuePaise, 0))}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-slate-400">
+              This is the projected baseline. You can still override the Expected value above.
+            </p>
+          </div>
+        )}
 
         {/* PO attachment */}
         <div className="mt-4 flex flex-col gap-1.5">

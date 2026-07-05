@@ -15,10 +15,11 @@ import { EditInvoiceButton } from "./invoice-edit-form";
 import {
   RenewalsForPo,
   type RenewalCardData,
+  type RenewalBreakdownLine,
   type PaymentTermOption,
 } from "./renewals-section";
 import type { PaymentTermSpec } from "@/lib/invoicing";
-import { renewalDate } from "@/lib/renewals";
+import { renewalDate, renewalLineValuesPaise, RENEWAL_LOGIC, type RenewalLine } from "@/lib/renewals";
 import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/date";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -196,7 +197,7 @@ export default async function SitePage({
            product:products!product_id ( name ),
            line_category:product_categories!product_category_id ( name ),
            line_cost_type:cost_types!cost_type_id ( name ),
-           renewal_term:renewal_terms!renewal_term_id ( name )
+           renewal_term:renewal_terms!renewal_term_id ( name, logic, escalation_pct, amc_pct )
          )
        )`,
     )
@@ -541,6 +542,36 @@ export default async function SitePage({
         .order("year_number")
     : { data: [] };
 
+  // Per-PO renewal lines (base amount + the term's logic/rates), so each card
+  // can show a line-by-line breakdown built with the SAME math the projection
+  // used. Keyed by po_id; each entry keeps the display metadata alongside the
+  // RenewalLine the math consumes.
+  const renewalLinesByPo = new Map<
+    string,
+    { meta: { description: string; renewalTermName: string | null; logic: string | null; ratePct: number | null; basePaise: number }; line: RenewalLine }[]
+  >();
+  for (const po of purchaseOrders) {
+    const rows = (po.po_line_items || []).map((li) => {
+      const term = Array.isArray(li.renewal_term) ? li.renewal_term[0] : li.renewal_term;
+      const logic = (term?.logic as string | null) ?? null;
+      const escalationPct = (term?.escalation_pct as number | null) ?? null;
+      const amcPct = (term?.amc_pct as number | null) ?? null;
+      const basePaise = li.amount_paise ?? Math.round(li.qty * li.unit_price_paise);
+      return {
+        meta: {
+          description: li.description,
+          renewalTermName: (term?.name as string | null) ?? null,
+          logic,
+          // The rate that this logic actually uses (escalation vs AMC).
+          ratePct: logic === RENEWAL_LOGIC.amc ? amcPct : escalationPct,
+          basePaise,
+        },
+        line: { basePaise, logic, escalationPct, amcPct } satisfies RenewalLine,
+      };
+    });
+    renewalLinesByPo.set(po.id, rows);
+  }
+
   const renewalsByPo = new Map<string, RenewalCardData[]>();
   await Promise.all(
     (renewalRows ?? []).map(async (r) => {
@@ -555,6 +586,21 @@ export default async function SitePage({
           url: signed?.signedUrl ?? null,
         };
       }
+      // Per-line contributions for this year, via the shared projection math.
+      const poLines = renewalLinesByPo.get(r.po_id) ?? [];
+      const lineValues = renewalLineValuesPaise(
+        poLines.map((x) => x.line),
+        r.year_number,
+      );
+      const breakdown: RenewalBreakdownLine[] = poLines.map((x, i) => ({
+        description: x.meta.description,
+        renewalTermName: x.meta.renewalTermName,
+        logic: x.meta.logic,
+        ratePct: x.meta.ratePct,
+        basePaise: x.meta.basePaise,
+        valuePaise: lineValues[i] ?? 0,
+      }));
+
       const card: RenewalCardData = {
         id: r.id,
         yearNumber: r.year_number,
@@ -570,6 +616,7 @@ export default async function SitePage({
         paymentTermsId: r.payment_terms_id,
         status: r.status === "renewed" ? "renewed" : "upcoming",
         attachment: attached,
+        breakdown,
       };
       const list = renewalsByPo.get(r.po_id) || [];
       list.push(card);

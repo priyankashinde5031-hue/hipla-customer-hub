@@ -109,6 +109,17 @@ function renewalLinePaise(line: RenewalLine, yearsElapsed: number): number {
   }
 }
 
+// Per-line renewal contribution (paise) for a contract year — same order as
+// `lines`. Callers that only need the total use renewalExpectedPaise; the Site
+// 360 uses this to show how each line rolls up into the expected value.
+export function renewalLineValuesPaise(
+  lines: RenewalLine[],
+  yearNumber: number,
+): number[] {
+  const yearsElapsed = Number.isFinite(yearNumber) ? Math.max(0, Math.round(yearNumber) - 1) : 0;
+  return lines.map((line) => renewalLinePaise(line, yearsElapsed));
+}
+
 // Expected renewal value (paise) for the contract year `yearNumber`, summing
 // each line's contribution under its own renewal logic. `yearsElapsed` counts
 // whole contract years since Year 1: year 2 → 1, year 3 → 2, and so on.
@@ -116,8 +127,7 @@ export function renewalExpectedPaise(
   lines: RenewalLine[],
   yearNumber: number,
 ): number {
-  const yearsElapsed = Number.isFinite(yearNumber) ? Math.max(0, Math.round(yearNumber) - 1) : 0;
-  return lines.reduce((sum, line) => sum + renewalLinePaise(line, yearsElapsed), 0);
+  return renewalLineValuesPaise(lines, yearNumber).reduce((sum, v) => sum + v, 0);
 }
 
 // Deviation % = ((actual − expected) / expected) × 100. By rule, 0% when the
