@@ -67,29 +67,57 @@ export function renewalDate(goLiveDate: string | null | undefined, offsetMonths:
   return addMonths(goLiveDate, offsetMonths);
 }
 
-// One PO line's Year-1 baseline plus the annual escalation carried by its
-// renewal term. `escalationPct` is the per-year step-up (e.g. 12 for 12%);
-// null/0/absent means the line stays flat on renewal.
-export type EscalatingLine = {
+// The renewal basis a term can carry. These string values are the single
+// source of truth for the `logic` catalog options (see lib/catalogs.ts) and the
+// switch below — keep the two in lockstep.
+export const RENEWAL_LOGIC = {
+  escalation: "Recurring — with escalation",
+  flat: "Recurring — flat",
+  oneTime: "One-time — no renewal",
+  amc: "AMC — annual maintenance",
+} as const;
+
+// One PO line's Year-1 baseline plus the renewal basis carried by its term.
+// Only the percentage relevant to `logic` is used; the other is ignored.
+export type RenewalLine = {
   basePaise: number; // qty × unit price for this line, in paise
-  escalationPct: number | null | undefined; // per-year %, from the renewal term
+  logic: string | null | undefined; // one of RENEWAL_LOGIC, or null (→ flat)
+  escalationPct: number | null | undefined; // per-year compounding step-up %
+  amcPct: number | null | undefined; // annual maintenance as a flat % of base
 };
 
-// Expected renewal value (paise) for the contract year `yearNumber`, escalating
-// each line from its Year-1 base by its own annual %, compounding once per
-// contract year elapsed: year 2 = base × (1 + pct/100)^1, year 3 → ^2, and so
-// on. Lines with no escalation % stay flat. Rounded per line to whole paise so
-// the projection stays an integer (CLAUDE.md: money is integer paise).
-export function escalatedExpectedPaise(
-  lines: EscalatingLine[],
+// This line's contribution to the renewal in a given contract year, per its
+// logic. Rounded to whole paise (CLAUDE.md: money is integer paise).
+//   * escalation → base × (1 + pct/100)^yearsElapsed  (compounds each year)
+//   * AMC        → base × pct/100                       (flat maintenance fee)
+//   * one-time   → 0                                    (no renewal at all)
+//   * flat / unknown / null → base                      (repeats unchanged)
+function renewalLinePaise(line: RenewalLine, yearsElapsed: number): number {
+  switch (line.logic) {
+    case RENEWAL_LOGIC.escalation: {
+      const pct = line.escalationPct && line.escalationPct > 0 ? line.escalationPct : 0;
+      return Math.round(line.basePaise * Math.pow(1 + pct / 100, yearsElapsed));
+    }
+    case RENEWAL_LOGIC.amc: {
+      const pct = line.amcPct && line.amcPct > 0 ? line.amcPct : 0;
+      return Math.round((line.basePaise * pct) / 100);
+    }
+    case RENEWAL_LOGIC.oneTime:
+      return 0;
+    default:
+      return line.basePaise; // flat, or no term recorded
+  }
+}
+
+// Expected renewal value (paise) for the contract year `yearNumber`, summing
+// each line's contribution under its own renewal logic. `yearsElapsed` counts
+// whole contract years since Year 1: year 2 → 1, year 3 → 2, and so on.
+export function renewalExpectedPaise(
+  lines: RenewalLine[],
   yearNumber: number,
 ): number {
   const yearsElapsed = Number.isFinite(yearNumber) ? Math.max(0, Math.round(yearNumber) - 1) : 0;
-  return lines.reduce((sum, line) => {
-    const pct = line.escalationPct && line.escalationPct > 0 ? line.escalationPct : 0;
-    const factor = Math.pow(1 + pct / 100, yearsElapsed);
-    return sum + Math.round(line.basePaise * factor);
-  }, 0);
+  return lines.reduce((sum, line) => sum + renewalLinePaise(line, yearsElapsed), 0);
 }
 
 // Deviation % = ((actual − expected) / expected) × 100. By rule, 0% when the

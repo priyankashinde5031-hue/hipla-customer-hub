@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useMemo, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import { Plus } from "lucide-react";
@@ -45,6 +45,29 @@ export function CatalogManager({
   const [dialogItem, setDialogItem] = useState<CatalogItem | null | "new">(null);
   const [isPending, startTransition] = useTransition();
   const router = useRouter();
+
+  // Track the live value of any field other fields depend on (via showWhen),
+  // so dependent fields reveal/hide as the user changes the controlling select.
+  const controllerKeys = useMemo(
+    () => new Set(catalog.fields.map((f) => f.showWhen?.field).filter((k): k is string => !!k)),
+    [catalog.fields],
+  );
+  const [controlValues, setControlValues] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (dialogItem === null) return;
+    const initial: Record<string, string> = {};
+    for (const field of catalog.fields) {
+      if (controllerKeys.has(field.key)) {
+        initial[field.key] =
+          dialogItem !== "new" ? String((dialogItem as CatalogItem)[field.key] ?? "") : "";
+      }
+    }
+    setControlValues(initial);
+  }, [dialogItem, catalog.fields, controllerKeys]);
+
+  const isFieldVisible = (field: CatalogConfig["fields"][number]) =>
+    !field.showWhen || field.showWhen.in.includes(controlValues[field.showWhen.field] ?? "");
 
   const closeDialog = () => setDialogItem(null);
 
@@ -171,7 +194,7 @@ export function CatalogManager({
             action={handleSubmit}
             className="flex flex-col gap-4"
           >
-            {catalog.fields.map((field) => (
+            {catalog.fields.filter(isFieldVisible).map((field) => (
               <div key={field.key} className="flex flex-col gap-1.5">
                 <Label htmlFor={field.key}>
                   {field.label}
@@ -182,9 +205,18 @@ export function CatalogManager({
                     id={field.key}
                     name={field.key}
                     required={field.required}
-                    defaultValue={
-                      dialogItem && dialogItem !== "new" ? String(dialogItem[field.key] ?? "") : ""
-                    }
+                    {...(controllerKeys.has(field.key)
+                      ? {
+                          value: controlValues[field.key] ?? "",
+                          onChange: (e) =>
+                            setControlValues((v) => ({ ...v, [field.key]: e.target.value })),
+                        }
+                      : {
+                          defaultValue:
+                            dialogItem && dialogItem !== "new"
+                              ? String(dialogItem[field.key] ?? "")
+                              : "",
+                        })}
                     className="h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50"
                   >
                     <option value="" disabled>

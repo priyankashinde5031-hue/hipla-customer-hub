@@ -2,12 +2,18 @@
 // code"). One config per seeded catalog table drives one shared UI pattern
 // (list / add / edit / deactivate) instead of seven bespoke pages.
 
+import { RENEWAL_LOGIC } from "@/lib/renewals";
+
 export type CatalogField = {
   key: string;
   label: string;
   type: "text" | "number" | "select";
   required: boolean;
   options?: string[];
+  // Show this field only when another field's value is one of `in`. Used e.g.
+  // to reveal Escalation % only for escalating renewal terms. When hidden, the
+  // field is not submitted and its column is cleared to null.
+  showWhen?: { field: string; in: string[] };
 };
 
 export type CatalogConfig = {
@@ -108,10 +114,10 @@ export const CATALOGS: CatalogConfig[] = [
         type: "select",
         required: true,
         options: [
-          "Recurring — with escalation",
-          "Recurring — flat",
-          "One-time — no renewal",
-          "AMC — annual maintenance",
+          RENEWAL_LOGIC.escalation,
+          RENEWAL_LOGIC.flat,
+          RENEWAL_LOGIC.oneTime,
+          RENEWAL_LOGIC.amc,
         ],
       },
       {
@@ -119,6 +125,14 @@ export const CATALOGS: CatalogConfig[] = [
         label: "Escalation % (per year)",
         type: "number",
         required: false,
+        showWhen: { field: "logic", in: [RENEWAL_LOGIC.escalation] },
+      },
+      {
+        key: "amc_pct",
+        label: "AMC % (of line total)",
+        type: "number",
+        required: false,
+        showWhen: { field: "logic", in: [RENEWAL_LOGIC.amc] },
       },
     ],
   },
