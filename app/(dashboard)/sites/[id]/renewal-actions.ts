@@ -14,6 +14,7 @@ export type RenewalFieldInput = {
   renewalValueRupees: number | null; // actual, in ₹
   renewalReceivedDate: string | null; // yyyy-mm-dd
   paymentTermsId: string | null; // FK to the Settings payment_terms catalog
+  renewalPoTypeId: string | null; // FK to the Settings renewal_po_types catalog
 };
 
 type ActionResult = { error?: string };
@@ -79,6 +80,7 @@ export async function updateRenewal(
     renewal_value_paise: valuePaise,
     renewal_received_date: input.renewalReceivedDate || null,
     payment_terms_id: input.paymentTermsId || null,
+    renewal_po_type_id: input.renewalPoTypeId || null,
     updated_at: new Date().toISOString(),
   };
 

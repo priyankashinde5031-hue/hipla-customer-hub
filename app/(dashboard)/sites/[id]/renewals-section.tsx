@@ -25,6 +25,9 @@ export type PaymentTermOption = {
   billing_schedule_days: number | null;
 };
 
+// Renewal PO type option from the Settings renewal_po_types catalog.
+export type RenewalPoTypeOption = { id: string; name: string };
+
 // One PO line's contribution to this renewal year, stamped from the original PO
 // using the same math the projection uses — so a reader sees how the expected
 // value was reached, line by line.
@@ -45,6 +48,7 @@ export type RenewalCardData = {
   renewalValuePaise: number | null;
   renewalReceivedDate: string | null;
   paymentTermsId: string | null;
+  renewalPoTypeId: string | null;
   status: "upcoming" | "renewed";
   attachment: { filename: string; url: string | null } | null;
   breakdown: RenewalBreakdownLine[]; // per-line calculation from the origin PO
@@ -115,16 +119,19 @@ function RenewalCard({
   siteId,
   canEdit,
   paymentTermsOptions,
+  renewalPoTypeOptions,
 }: {
   renewal: RenewalCardData;
   siteId: string;
   canEdit: boolean;
   paymentTermsOptions: PaymentTermOption[];
+  renewalPoTypeOptions: RenewalPoTypeOption[];
 }) {
   const [expected, setExpected] = useState(paiseToInput(renewal.expectedValuePaise));
   const [value, setValue] = useState(paiseToInput(renewal.renewalValuePaise));
   const [received, setReceived] = useState(renewal.renewalReceivedDate ?? "");
   const [termId, setTermId] = useState(renewal.paymentTermsId ?? "");
+  const [poTypeId, setPoTypeId] = useState(renewal.renewalPoTypeId ?? "");
   const [isSaving, startSave] = useTransition();
   const [isUploading, startUpload] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -157,6 +164,7 @@ function RenewalCard({
       renewalValueRupees: value.trim() === "" ? null : Number(value),
       renewalReceivedDate: received || null,
       paymentTermsId: termId || null,
+      renewalPoTypeId: poTypeId || null,
     };
   }
 
@@ -368,8 +376,27 @@ function RenewalCard({
           </div>
         )}
 
-        {/* PO attachment */}
-        <div className="mt-4 flex flex-col gap-1.5">
+        {/* Renewal PO type + PO attachment, side by side */}
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`potype-${renewal.id}`}>Renewal PO type</Label>
+          <select
+            id={`potype-${renewal.id}`}
+            value={poTypeId}
+            onChange={(e) => setPoTypeId(e.target.value)}
+            disabled={!canEdit || isDone}
+            className={inputClass}
+          >
+            <option value="">—</option>
+            {renewalPoTypeOptions.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <Label>PO attachment</Label>
           <div className="flex flex-wrap items-center gap-3">
             {renewal.attachment ? (
@@ -407,6 +434,7 @@ function RenewalCard({
               </span>
             )}
           </div>
+        </div>
         </div>
 
         {/* Actions */}
@@ -449,12 +477,14 @@ export function RenewalsForPo({
   canEdit,
   goLiveSet,
   paymentTermsOptions,
+  renewalPoTypeOptions,
 }: {
   renewals: RenewalCardData[];
   siteId: string;
   canEdit: boolean;
   goLiveSet: boolean;
   paymentTermsOptions: PaymentTermOption[];
+  renewalPoTypeOptions: RenewalPoTypeOption[];
 }) {
   return (
     <div className="mt-4">
@@ -483,6 +513,7 @@ export function RenewalsForPo({
               siteId={siteId}
               canEdit={canEdit}
               paymentTermsOptions={paymentTermsOptions}
+              renewalPoTypeOptions={renewalPoTypeOptions}
             />
           ))}
         </div>

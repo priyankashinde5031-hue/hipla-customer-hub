@@ -146,6 +146,15 @@ export const CATALOGS: CatalogConfig[] = [
     fields: [{ key: "name", label: "Name", type: "text", required: true }],
   },
   {
+    slug: "renewal-po-types",
+    table: "renewal_po_types",
+    label: "Renewal PO Types",
+    singular: "Renewal PO Type",
+    description: "Types of Purchase Order raised for a renewal year — recorded on the renewal card.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
+  {
     slug: "ticket-topics",
     table: "ticket_topics",
     label: "Ticket Topics",

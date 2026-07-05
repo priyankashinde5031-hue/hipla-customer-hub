@@ -468,6 +468,7 @@ export default async function SitePage({
     modulesRes,
     orgSitesRes,
     ownersRes,
+    renewalPoTypesRes,
   ] = await Promise.all([
     getCurrentInternalUser(),
     supabase.from("po_types").select("id, name").eq("active", true).order("name"),
@@ -487,6 +488,7 @@ export default async function SitePage({
       ? supabase.from("sites").select("id, name").eq("organization_id", orgId).order("name")
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("renewal_po_types").select("id, name").eq("active", true).order("name"),
   ]);
 
   const canEdit = canEditCatalogs(user);
@@ -503,6 +505,8 @@ export default async function SitePage({
       billing_schedule_days: t.billing_schedule_days ?? null,
     }),
   );
+
+  const renewalPoTypeOptions = renewalPoTypesRes.data ?? [];
 
   const poFormOptions = {
     organizationId: orgId ?? "",
@@ -535,7 +539,7 @@ export default async function SitePage({
         .select(
           `id, po_id, year_number, offset_months, term_months,
            expected_value_paise, renewal_value_paise, renewal_received_date,
-           payment_terms_id, status,
+           payment_terms_id, renewal_po_type_id, status,
            attachment:attachments!attachment_id ( storage_path, original_filename )`,
         )
         .in("po_id", poIds)
@@ -614,6 +618,7 @@ export default async function SitePage({
         renewalValuePaise: r.renewal_value_paise,
         renewalReceivedDate: r.renewal_received_date,
         paymentTermsId: r.payment_terms_id,
+        renewalPoTypeId: r.renewal_po_type_id,
         status: r.status === "renewed" ? "renewed" : "upcoming",
         attachment: attached,
         breakdown,
@@ -1226,6 +1231,7 @@ export default async function SitePage({
                     canEdit={canEdit}
                     goLiveSet={Boolean(site.go_live_date)}
                     paymentTermsOptions={renewalPaymentTermsOptions}
+                    renewalPoTypeOptions={renewalPoTypeOptions}
                   />
                 </div>
               </PoTableRow>
