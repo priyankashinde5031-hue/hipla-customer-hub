@@ -43,7 +43,9 @@ export type RenewalBreakdownLine = {
 export type RenewalCardData = {
   id: string;
   yearNumber: number;
-  renewalDate: string | null; // computed from go-live; null = "—"
+  renewalDate: string | null; // effective date shown: override ?? auto; null = "—"
+  autoRenewalDate: string | null; // go-live-driven date; null when no go-live set
+  renewalDateOverride: string | null; // manual override; null = follow the auto date
   expectedValuePaise: number | null;
   renewalValuePaise: number | null;
   renewalReceivedDate: string | null;
@@ -130,6 +132,7 @@ function RenewalCard({
   const [expected, setExpected] = useState(paiseToInput(renewal.expectedValuePaise));
   const [value, setValue] = useState(paiseToInput(renewal.renewalValuePaise));
   const [received, setReceived] = useState(renewal.renewalReceivedDate ?? "");
+  const [dateOverride, setDateOverride] = useState(renewal.renewalDateOverride ?? "");
   const [termId, setTermId] = useState(renewal.paymentTermsId ?? "");
   const [poTypeId, setPoTypeId] = useState(renewal.renewalPoTypeId ?? "");
   const [isSaving, startSave] = useTransition();
@@ -163,6 +166,7 @@ function RenewalCard({
       expectedValueRupees: expected.trim() === "" ? null : Number(expected),
       renewalValueRupees: value.trim() === "" ? null : Number(value),
       renewalReceivedDate: received || null,
+      renewalDateOverride: dateOverride || null,
       paymentTermsId: termId || null,
       renewalPoTypeId: poTypeId || null,
     };
@@ -249,11 +253,37 @@ function RenewalCard({
 
       <div className="border-t border-slate-200 px-3 py-3">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Renewal date — read-only, computed */}
+          {/* Renewal date — auto from go-live, but editable as an override.
+              Empty = follow the go-live-driven date shown in the hint below. */}
           <div className="flex flex-col gap-1.5">
-            <Label>Renewal date</Label>
-            <p className={readOnlyFieldClass}>
-              {formatDate(renewal.renewalDate)}
+            <Label htmlFor={`rdate-${renewal.id}`}>Renewal date</Label>
+            <input
+              id={`rdate-${renewal.id}`}
+              type="date"
+              value={dateOverride || renewal.autoRenewalDate || ""}
+              onChange={(e) => setDateOverride(e.target.value)}
+              disabled={!canEdit || isDone}
+              className={inputClass}
+            />
+            <p className="text-xs text-slate-400">
+              {dateOverride ? (
+                <>
+                  Manually set.{" "}
+                  {canEdit && !isDone && (
+                    <button
+                      type="button"
+                      onClick={() => setDateOverride("")}
+                      className="font-medium text-indigo-600 hover:text-indigo-700"
+                    >
+                      Reset to go-live date{renewal.autoRenewalDate ? ` (${formatDate(renewal.autoRenewalDate)})` : ""}
+                    </button>
+                  )}
+                </>
+              ) : renewal.autoRenewalDate ? (
+                "Auto — from the implementation go-live date. Change it to override."
+              ) : (
+                "Set the Go Live Date in Implementation (Stage 4), or enter a date here."
+              )}
             </p>
           </div>
 

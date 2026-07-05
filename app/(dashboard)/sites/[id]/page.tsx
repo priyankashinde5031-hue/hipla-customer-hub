@@ -541,7 +541,7 @@ export default async function SitePage({
         .select(
           `id, po_id, year_number, offset_months, term_months,
            expected_value_paise, renewal_value_paise, renewal_received_date,
-           payment_terms_id, renewal_po_type_id, status,
+           renewal_date_override, payment_terms_id, renewal_po_type_id, status,
            attachment:attachments!attachment_id ( storage_path, original_filename )`,
         )
         .in("po_id", poIds)
@@ -607,15 +607,20 @@ export default async function SitePage({
         valuePaise: lineValues[i] ?? 0,
       }));
 
+      // Auto date: anchor to the go-live of the project linked to THIS PO; fall
+      // back to the site's go-live when no project is linked yet. A manual
+      // override, when present, wins over this computed date.
+      const autoRenewalDate = renewalDate(
+        poGoLiveMap.get(r.po_id) ?? site.go_live_date,
+        r.offset_months,
+      );
+
       const card: RenewalCardData = {
         id: r.id,
         yearNumber: r.year_number,
-        // Anchor to the go-live of the project linked to THIS PO; fall back to
-        // the site's go-live when no project is linked yet.
-        renewalDate: renewalDate(
-          poGoLiveMap.get(r.po_id) ?? site.go_live_date,
-          r.offset_months,
-        ),
+        autoRenewalDate,
+        renewalDateOverride: r.renewal_date_override,
+        renewalDate: r.renewal_date_override ?? autoRenewalDate,
         expectedValuePaise: r.expected_value_paise,
         renewalValuePaise: r.renewal_value_paise,
         renewalReceivedDate: r.renewal_received_date,
