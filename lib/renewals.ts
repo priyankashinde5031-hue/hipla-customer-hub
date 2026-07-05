@@ -67,6 +67,31 @@ export function renewalDate(goLiveDate: string | null | undefined, offsetMonths:
   return addMonths(goLiveDate, offsetMonths);
 }
 
+// One PO line's Year-1 baseline plus the annual escalation carried by its
+// renewal term. `escalationPct` is the per-year step-up (e.g. 12 for 12%);
+// null/0/absent means the line stays flat on renewal.
+export type EscalatingLine = {
+  basePaise: number; // qty × unit price for this line, in paise
+  escalationPct: number | null | undefined; // per-year %, from the renewal term
+};
+
+// Expected renewal value (paise) for the contract year `yearNumber`, escalating
+// each line from its Year-1 base by its own annual %, compounding once per
+// contract year elapsed: year 2 = base × (1 + pct/100)^1, year 3 → ^2, and so
+// on. Lines with no escalation % stay flat. Rounded per line to whole paise so
+// the projection stays an integer (CLAUDE.md: money is integer paise).
+export function escalatedExpectedPaise(
+  lines: EscalatingLine[],
+  yearNumber: number,
+): number {
+  const yearsElapsed = Number.isFinite(yearNumber) ? Math.max(0, Math.round(yearNumber) - 1) : 0;
+  return lines.reduce((sum, line) => {
+    const pct = line.escalationPct && line.escalationPct > 0 ? line.escalationPct : 0;
+    const factor = Math.pow(1 + pct / 100, yearsElapsed);
+    return sum + Math.round(line.basePaise * factor);
+  }, 0);
+}
+
 // Deviation % = ((actual − expected) / expected) × 100. By rule, 0% when the
 // expected value is 0, null, or missing (no baseline to deviate from).
 export function deviationPercent(

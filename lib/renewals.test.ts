@@ -4,6 +4,7 @@ import {
   addMonths,
   renewalDate,
   deviationPercent,
+  escalatedExpectedPaise,
 } from "./renewals";
 
 describe("generateRenewalSchedule", () => {
@@ -62,6 +63,38 @@ describe("renewalDate", () => {
   });
   it("is null when go-live is unset", () => {
     expect(renewalDate(null, 12)).toBeNull();
+  });
+});
+
+describe("escalatedExpectedPaise", () => {
+  const lines = [{ basePaise: 100_00, escalationPct: 12 }];
+
+  it("returns the flat base in Year 1 (no years elapsed)", () => {
+    expect(escalatedExpectedPaise(lines, 1)).toBe(100_00);
+  });
+
+  it("compounds the escalation once per contract year elapsed", () => {
+    expect(escalatedExpectedPaise(lines, 2)).toBe(112_00); // ×1.12
+    expect(escalatedExpectedPaise(lines, 3)).toBe(Math.round(100_00 * 1.12 ** 2)); // 125_44
+    expect(escalatedExpectedPaise(lines, 4)).toBe(Math.round(100_00 * 1.12 ** 3));
+  });
+
+  it("keeps lines with no / zero / null escalation flat", () => {
+    expect(escalatedExpectedPaise([{ basePaise: 500_00, escalationPct: 0 }], 5)).toBe(500_00);
+    expect(escalatedExpectedPaise([{ basePaise: 500_00, escalationPct: null }], 5)).toBe(500_00);
+    expect(escalatedExpectedPaise([{ basePaise: 500_00, escalationPct: undefined }], 5)).toBe(500_00);
+  });
+
+  it("escalates each line by its own rate, then sums (rounded per line)", () => {
+    const mixed = [
+      { basePaise: 100_00, escalationPct: 12 }, // → 112_00
+      { basePaise: 200_00, escalationPct: null }, // → 200_00 flat
+    ];
+    expect(escalatedExpectedPaise(mixed, 2)).toBe(112_00 + 200_00);
+  });
+
+  it("is 0 for no lines", () => {
+    expect(escalatedExpectedPaise([], 3)).toBe(0);
   });
 });
 
