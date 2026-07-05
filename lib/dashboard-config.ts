@@ -14,8 +14,9 @@ export const USAGE_DEVIATION_ALERT_PCT = -25;
 export const STAGE_STALL_DAYS = 14;
 
 // Renewals: how far ahead an upcoming (not-yet-overdue) renewal is surfaced as
-// pipeline on the dashboard. Owner ask: renewals due in the next 60 days.
-export const RENEWAL_UPCOMING_DAYS = 60;
+// pipeline on the dashboard + the Renewals page "Upcoming" filter. Owner ask
+// (2026-07-05, revised): renewals due in the next 30 days.
+export const RENEWAL_UPCOMING_DAYS = 30;
 
 // Invoices: how far ahead a not-yet-overdue invoice is surfaced as pipeline.
 // Owner ask: invoices due in the next 30 days ("due this month").

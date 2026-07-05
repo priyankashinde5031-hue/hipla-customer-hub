@@ -75,9 +75,9 @@ function DashboardSkeleton() {
       </div>
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <PanelSkeleton title="Pending renewals" />
+        <PanelSkeleton title="Upcoming renewals (30d)" />
         <PanelSkeleton title="Due invoices" />
         <PanelSkeleton title="Implementations at risk" />
-        <PanelSkeleton title="Usage alerts" />
       </div>
     </>
   );
@@ -100,6 +100,42 @@ async function DashboardBody({
   const { renewals, invoices, implementation, usage } = data;
 
   const worstUsage = usage.rows[0];
+  // renewals.rows = overdue + upcoming (within RENEWAL_UPCOMING_DAYS = 30d).
+  // Split them so overdue and upcoming get their own panels.
+  const overdueRenewals = renewals.rows.filter((r) => r.overdue);
+  const upcomingRenewals = renewals.rows.filter((r) => !r.overdue);
+
+  // One renewal row, shared by the Pending (overdue) and Upcoming panels.
+  const renderRenewalRow = (r: (typeof renewals.rows)[number]) => (
+    <PanelRow
+      key={r.id}
+      href={r.siteId ? `/sites/${r.siteId}` : "/renewals"}
+      action={
+        r.siteId ? (
+          <a
+            href={`/sites/${r.siteId}/spox`}
+            className="rounded text-xs font-medium text-indigo-600 hover:text-indigo-700"
+          >
+            Contact →
+          </a>
+        ) : null
+      }
+    >
+      <span className="min-w-0 flex-1 truncate text-sm text-gray-900">{r.customer}</span>
+      {r.aging ? <RenewalAgingTag aging={r.aging} /> : null}
+      <Meta>{formatDate(r.renewalDate)}</Meta>
+      <span
+        className={`shrink-0 text-xs font-medium tabular-nums ${
+          r.overdue ? "text-red-600" : "text-slate-500"
+        }`}
+      >
+        {r.overdue ? `${Math.abs(r.daysUntil ?? 0)}d overdue` : `in ${r.daysUntil}d`}
+      </span>
+      <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums text-gray-900">
+        {formatPaiseShort(r.amountPaise)}
+      </span>
+    </PanelRow>
+  );
 
   return (
     <>
@@ -151,50 +187,30 @@ async function DashboardBody({
         />
       </div>
 
-      {/* Row 2 — the two money modules. */}
+      {/* Row 2 — renewals, split into overdue (needs action now) and upcoming
+          (next 30 days) so the two are never conflated. */}
       <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel
           title="Pending renewals"
-          count={renewals.rows.length}
+          count={overdueRenewals.length}
           viewAllHref={`/renewals${qs || "?"}${qs ? "&" : ""}status=overdue`}
-          empty={renewals.rows.length === 0 ? "No overdue or upcoming renewals — you're clear." : null}
+          empty={overdueRenewals.length === 0 ? "No overdue renewals — you're clear." : null}
         >
-          {renewals.rows.slice(0, 5).map((r) => (
-            <PanelRow
-              key={r.id}
-              href={r.siteId ? `/sites/${r.siteId}` : "/renewals"}
-              action={
-                r.siteId ? (
-                  <a
-                    href={`/sites/${r.siteId}/spox`}
-                    className="rounded text-xs font-medium text-indigo-600 hover:text-indigo-700"
-                  >
-                    Contact →
-                  </a>
-                ) : null
-              }
-            >
-              <span className="min-w-0 flex-1 truncate text-sm text-gray-900">
-                {r.customer}
-              </span>
-              {r.aging ? <RenewalAgingTag aging={r.aging} /> : null}
-              <Meta>{formatDate(r.renewalDate)}</Meta>
-              <span
-                className={`shrink-0 text-xs font-medium tabular-nums ${
-                  r.overdue ? "text-red-600" : "text-slate-500"
-                }`}
-              >
-                {r.overdue
-                  ? `${Math.abs(r.daysUntil ?? 0)}d overdue`
-                  : `in ${r.daysUntil}d`}
-              </span>
-              <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums text-gray-900">
-                {formatPaiseShort(r.amountPaise)}
-              </span>
-            </PanelRow>
-          ))}
+          {overdueRenewals.slice(0, 5).map((r) => renderRenewalRow(r))}
         </Panel>
 
+        <Panel
+          title="Upcoming renewals (30d)"
+          count={upcomingRenewals.length}
+          viewAllHref={`/renewals${qs || "?"}${qs ? "&" : ""}status=upcoming`}
+          empty={upcomingRenewals.length === 0 ? "No renewals due in the next 30 days." : null}
+        >
+          {upcomingRenewals.slice(0, 5).map((r) => renderRenewalRow(r))}
+        </Panel>
+      </div>
+
+      {/* Row 3 — collections + delivery risk. */}
+      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel
           title="Due invoices"
           count={invoices.rows.length}
@@ -228,10 +244,7 @@ async function DashboardBody({
             </PanelRow>
           ))}
         </Panel>
-      </div>
 
-      {/* Row 3 — delivery + churn signal. */}
-      <div className="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
         <Panel
           title="Implementations at risk"
           count={implementation.rows.length}
@@ -262,7 +275,10 @@ async function DashboardBody({
             </PanelRow>
           ))}
         </Panel>
+      </div>
 
+      {/* Row 4 — churn signal (usage), full width. */}
+      <div className="mt-4">
         <Panel
           title="Usage alerts"
           count={usage.rows.length}

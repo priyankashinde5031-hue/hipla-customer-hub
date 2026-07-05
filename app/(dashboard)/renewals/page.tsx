@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
 import { getDashboardData, getFilterOptions, parseFilterParams } from "@/lib/dashboard-metrics";
+import { RENEWAL_UPCOMING_DAYS } from "@/lib/dashboard-config";
 import { ModuleHeader, StatusChip, chipHref } from "../_dashboard/module-header";
 import { RenewalAgingTag } from "../_dashboard/tags";
 
@@ -24,19 +25,36 @@ export default async function RenewalsPage({
     customer: typeof sp.customer === "string" ? sp.customer : undefined,
     module: typeof sp.module === "string" ? sp.module : undefined,
   });
-  // Wide horizon so the full page shows all future renewals, not just 60 days.
+  // Wide horizon so "All"/"Later" can show every future renewal for planning;
+  // the "Upcoming" chip narrows to the next 30 days (owner ask).
   const data = await getDashboardData(supabase, filter, { horizonDays: 3650 });
+
+  const isUpcomingSoon = (r: (typeof data.renewals.rows)[number]) =>
+    !r.overdue && (r.daysUntil ?? Infinity) <= RENEWAL_UPCOMING_DAYS;
+  const isLater = (r: (typeof data.renewals.rows)[number]) =>
+    !r.overdue && (r.daysUntil ?? Infinity) > RENEWAL_UPCOMING_DAYS;
 
   const status = typeof sp.status === "string" ? sp.status : "all";
   const rows = data.renewals.rows.filter((r) =>
-    status === "overdue" ? r.overdue : status === "upcoming" ? !r.overdue : true,
+    status === "overdue"
+      ? r.overdue
+      : status === "upcoming"
+        ? isUpcomingSoon(r)
+        : status === "later"
+          ? isLater(r)
+          : true,
   );
+
+  const overdueCount = data.renewals.rows.filter((r) => r.overdue).length;
+  const upcomingCount = data.renewals.rows.filter(isUpcomingSoon).length;
+  const laterCount = data.renewals.rows.filter(isLater).length;
 
   const chips = (
     <>
       <StatusChip href={chipHref("/renewals", sp, null)} label={`All (${data.renewals.rows.length})`} active={status === "all"} />
-      <StatusChip href={chipHref("/renewals", sp, "overdue")} label={`Overdue (${data.renewals.overdueCount})`} active={status === "overdue"} />
-      <StatusChip href={chipHref("/renewals", sp, "upcoming")} label={`Upcoming (${data.renewals.upcomingCount})`} active={status === "upcoming"} />
+      <StatusChip href={chipHref("/renewals", sp, "overdue")} label={`Overdue (${overdueCount})`} active={status === "overdue"} />
+      <StatusChip href={chipHref("/renewals", sp, "upcoming")} label={`Upcoming · 30d (${upcomingCount})`} active={status === "upcoming"} />
+      <StatusChip href={chipHref("/renewals", sp, "later")} label={`Later (${laterCount})`} active={status === "later"} />
     </>
   );
 

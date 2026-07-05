@@ -3,6 +3,7 @@ import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
 import { getDashboardData, getFilterOptions, parseFilterParams } from "@/lib/dashboard-metrics";
+import { INVOICE_UPCOMING_DAYS } from "@/lib/dashboard-config";
 import { ModuleHeader, StatusChip, chipHref } from "../_dashboard/module-header";
 import { InvoiceAgingTag } from "../_dashboard/tags";
 
@@ -24,19 +25,28 @@ export default async function InvoicesPage({
     customer: typeof sp.customer === "string" ? sp.customer : undefined,
     module: typeof sp.module === "string" ? sp.module : undefined,
   });
-  // Wide horizon so the page lists all outstanding invoices, not just due-in-30d.
+  // Wide horizon so "All" can list every outstanding invoice; the default
+  // "Outstanding" view narrows to overdue + due within the next 30 days (owner ask).
   const data = await getDashboardData(supabase, filter, { horizonDays: 3650 });
+
+  // daysOverdue > 0 = past due; ≤ 0 = not yet due (its magnitude = days until due).
+  // "Due soon" = overdue OR due within the next 30 days.
+  const isDueSoon = (inv: (typeof data.invoices.rows)[number]) =>
+    inv.daysOverdue >= -INVOICE_UPCOMING_DAYS;
 
   const status = typeof sp.status === "string" ? sp.status : "outstanding";
   const rows = data.invoices.rows.filter((inv) =>
-    status === "overdue" ? inv.overdue : true,
+    status === "overdue" ? inv.overdue : status === "all" ? true : isDueSoon(inv),
   );
   const totalBalance = rows.reduce((s, r) => s + r.balancePaise, 0);
 
+  const dueSoonCount = data.invoices.rows.filter(isDueSoon).length;
+
   const chips = (
     <>
-      <StatusChip href={chipHref("/invoices", sp, "outstanding")} label={`Outstanding (${data.invoices.rows.length})`} active={status !== "overdue"} />
+      <StatusChip href={chipHref("/invoices", sp, "outstanding")} label={`Outstanding · 30d (${dueSoonCount})`} active={status === "outstanding"} />
       <StatusChip href={chipHref("/invoices", sp, "overdue")} label={`Overdue (${data.invoices.overdueCount})`} active={status === "overdue"} />
+      <StatusChip href={chipHref("/invoices", sp, "all")} label={`All outstanding (${data.invoices.rows.length})`} active={status === "all"} />
     </>
   );
 
