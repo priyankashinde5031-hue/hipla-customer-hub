@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
@@ -274,8 +275,9 @@ export default async function SitePage({
     .from("invoices")
     .select(
       `id, po_id, invoice_number, amount_paise, gst_amount_paise, total_paise,
-       issue_date, due_date, status,
-       purchase_order:purchase_orders ( po_number )`,
+       issue_date, due_date, status, renewal_id,
+       purchase_order:purchase_orders ( po_number ),
+       renewal:renewals!renewal_id ( year_number )`,
     )
     .eq("billed_site_id", id)
     .order("issue_date", { ascending: false });
@@ -1113,9 +1115,16 @@ export default async function SitePage({
                     </table>
                   )}
 
-                  <div className="mt-4 flex items-center justify-between">
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="flex items-center gap-2 text-base font-serif font-semibold text-indigo-900">
+                      <Receipt className="size-4 text-indigo-600" />
                       Invoices
+                      {poInvoices.length > 0 && (
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                          {poInvoices.length}
+                        </span>
+                      )}
                     </h3>
                     {canEdit && (
                       <span className="flex items-center gap-3">
@@ -1128,7 +1137,7 @@ export default async function SitePage({
                       No invoices raised against this PO for this site yet.
                     </p>
                   ) : (
-                    <div className="mt-2 space-y-3">
+                    <div className="mt-3 space-y-3">
                       {poInvoices.map((inv) => {
                         const balance = balancesByInvoice.get(inv.id);
                         const status = balance?.computed_status || inv.status;
@@ -1148,6 +1157,18 @@ export default async function SitePage({
                                 <span className="font-medium text-gray-900">
                                   {inv.invoice_number}
                                 </span>
+                                {(() => {
+                                  const rnw = Array.isArray(inv.renewal) ? inv.renewal[0] : inv.renewal;
+                                  return inv.renewal_id ? (
+                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                                      Renewal{rnw?.year_number ? ` · Yr ${rnw.year_number}` : ""}
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                      PO invoice
+                                    </span>
+                                  );
+                                })()}
                                 <span className="text-slate-500">
                                   Issued {formatDisplayDate(inv.issue_date)}
                                 </span>
@@ -1224,6 +1245,7 @@ export default async function SitePage({
                       })}
                     </div>
                   )}
+                  </div>
 
                   <RenewalsForPo
                     renewals={renewalsByPo.get(po.id) ?? []}
