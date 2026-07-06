@@ -174,6 +174,16 @@ export async function resetUserPassword(id: string): Promise<ResetResult> {
   const actor = await getCurrentInternalUser();
   if (!canManageUsers(actor)) return { error: "Only admins can reset passwords." };
 
+  // Password reset needs the service-role key. If it isn't configured on the
+  // server (e.g. not set in Vercel), fail with a clear message instead of
+  // letting the admin client throw and crash the page.
+  if (!process.env.SUPABASE_SERVICE_ROLE_KEY) {
+    return {
+      error:
+        "Password reset isn't configured on the server yet. Add SUPABASE_SERVICE_ROLE_KEY in Vercel (Production + Preview) and redeploy.",
+    };
+  }
+
   // The admin check has passed, so run the privileged read + write with the
   // service-role client. This avoids depending on RLS to fetch another staff
   // member's row, and is the client we need for the Auth Admin API anyway.
