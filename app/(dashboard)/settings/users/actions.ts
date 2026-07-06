@@ -166,13 +166,25 @@ async function findAuthUserIdByEmail(
 
 type ResetResult = { error?: string; password?: string; email?: string };
 
-// Admin-triggered password reset. Sets a fresh temporary password on the
-// person's login account and returns it ONCE so the admin can hand it over.
-// The password is never stored or written to the audit log — we only record
-// that a reset happened, by whom, for whom.
-export async function resetUserPassword(id: string): Promise<ResetResult> {
+// Minimum password length. Supabase's own default is 6; we ask for a bit more.
+const MIN_PASSWORD_LENGTH = 8;
+
+// Admin-triggered password reset. The admin can pass their own password to set;
+// if none is given we generate a random one. Either way it's returned ONCE so
+// the admin can hand it over. The password is never stored or written to the
+// audit log — we only record that a reset happened, by whom, for whom.
+export async function resetUserPassword(
+  id: string,
+  customPassword?: string,
+): Promise<ResetResult> {
   const actor = await getCurrentInternalUser();
   if (!canManageUsers(actor)) return { error: "Only admins can reset passwords." };
+
+  // Use the admin's chosen password if they typed one; otherwise generate.
+  const chosen = customPassword?.trim();
+  if (chosen && chosen.length < MIN_PASSWORD_LENGTH) {
+    return { error: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.` };
+  }
 
   // Password reset needs the service-role key. If it isn't configured on the
   // server (e.g. not set in Vercel), fail with a clear message instead of
@@ -195,7 +207,7 @@ export async function resetUserPassword(id: string): Promise<ResetResult> {
     .maybeSingle();
   if (!user) return { error: "User not found." };
 
-  const tempPassword = generateTempPassword();
+  const tempPassword = chosen && chosen.length ? chosen : generateTempPassword();
 
   try {
     // Resolve the person's REAL Auth account. The stored auth_user_id can be
