@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { toast } from "sonner";
-import { Plus } from "lucide-react";
+import { Plus, KeyRound, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -24,7 +24,7 @@ import {
   TableCell,
 } from "@/components/ui/table";
 import { USER_ROLES } from "@/lib/roles";
-import { createUser, updateUser, setUserActive } from "./actions";
+import { createUser, updateUser, setUserActive, resetUserPassword } from "./actions";
 
 export type StaffUser = {
   id: string;
@@ -50,9 +50,38 @@ export function UsersManager({
   currentUserId: string | null;
 }) {
   const [dialogUser, setDialogUser] = useState<StaffUser | null | "new">(null);
+  const [resetTarget, setResetTarget] = useState<StaffUser | null>(null);
+  const [resetResult, setResetResult] = useState<{ email: string; password: string } | null>(null);
+  const [copied, setCopied] = useState(false);
   const [isPending, startTransition] = useTransition();
 
   const close = () => setDialogUser(null);
+
+  function confirmReset() {
+    if (!resetTarget) return;
+    const target = resetTarget;
+    startTransition(async () => {
+      const result = await resetUserPassword(target.id);
+      if (result.error || !result.password) {
+        toast.error(result.error ?? "Could not reset the password.");
+        return;
+      }
+      setResetTarget(null);
+      setCopied(false);
+      setResetResult({ email: result.email ?? target.email, password: result.password });
+    });
+  }
+
+  async function copyPassword() {
+    if (!resetResult) return;
+    try {
+      await navigator.clipboard.writeText(resetResult.password);
+      setCopied(true);
+      toast.success("Password copied.");
+    } catch {
+      toast.error("Couldn't copy — select and copy it manually.");
+    }
+  }
 
   function handleSubmit(formData: FormData) {
     startTransition(async () => {
@@ -140,6 +169,16 @@ export function UsersManager({
                     <div className="flex items-center justify-end gap-3">
                       <Button variant="ghost" size="sm" onClick={() => setDialogUser(u)}>
                         Edit
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="gap-1.5 text-slate-600"
+                        disabled={isPending}
+                        onClick={() => setResetTarget(u)}
+                      >
+                        <KeyRound className="size-3.5" />
+                        Reset password
                       </Button>
                       <Switch
                         checked={u.is_active}
@@ -230,6 +269,77 @@ export function UsersManager({
               </Button>
             </DialogFooter>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      {/* Step 1 — confirm the reset */}
+      <Dialog
+        open={resetTarget !== null}
+        onOpenChange={(open) => !open && setResetTarget(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Reset password</DialogTitle>
+            <DialogDescription>
+              This creates a new temporary password for{" "}
+              <strong>{resetTarget?.name}</strong> ({resetTarget?.email}). Their
+              current password (if any) stops working immediately. You&apos;ll
+              see the new password once, to share with them.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="-mx-0 -mb-0 border-t-0 bg-transparent p-0 pt-2">
+            <Button type="button" variant="outline" onClick={() => setResetTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              type="button"
+              disabled={isPending}
+              className="bg-indigo-600 text-white hover:bg-indigo-700"
+              onClick={confirmReset}
+            >
+              {isPending ? "Resetting…" : "Reset password"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Step 2 — show the generated password once */}
+      <Dialog
+        open={resetResult !== null}
+        onOpenChange={(open) => !open && setResetResult(null)}
+      >
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Temporary password</DialogTitle>
+            <DialogDescription>
+              Share this with <strong>{resetResult?.email}</strong>. It&apos;s
+              shown only once — copy it now. Ask them to sign in and change it.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex items-center gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+            <code className="flex-1 font-mono text-base tracking-wide text-slate-900">
+              {resetResult?.password}
+            </code>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              onClick={copyPassword}
+            >
+              {copied ? <Check className="size-4 text-green-600" /> : <Copy className="size-4" />}
+              {copied ? "Copied" : "Copy"}
+            </Button>
+          </div>
+          <DialogFooter className="-mx-0 -mb-0 border-t-0 bg-transparent p-0 pt-2">
+            <Button
+              type="button"
+              className="bg-indigo-600 text-white hover:bg-indigo-700"
+              onClick={() => setResetResult(null)}
+            >
+              Done
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
     </div>
