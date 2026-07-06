@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
-import { generateRenewalSchedule } from "@/lib/renewals";
+import { generateRenewalSchedule, renewalExpectedPaise, type RenewalLine } from "@/lib/renewals";
 
 // canEditCatalogs already encodes "admin or manager", the same rule the spec
 // uses for commercial edits — reuse it rather than inventing a parallel check.
@@ -243,8 +243,9 @@ export async function updatePurchaseOrder(
 
 // Generate the renewal series for a freshly-created PO. Cadence is driven by
 // the PO's Contract time (months), defaulting to a yearly term when unset, and
-// capped at a 5-year horizon. Expected value is snapshotted from the Year-1 PO
-// value (ex-GST = sum of line items) and stays editable on each card.
+// capped at a 5-year horizon. Expected value starts from the Year-1 PO value
+// (ex-GST = sum of line items) and is escalated per year using each line's
+// renewal-term escalation % (e.g. 12% annually). It stays editable on each card.
 async function generateRenewals(
   supabase: Awaited<ReturnType<typeof createClient>>,
   actorId: string,
@@ -267,10 +268,33 @@ async function generateRenewals(
   const cycles = generateRenewalSchedule(initialTermMonths);
   if (cycles.length === 0) return; // e.g. a 5-year initial term has no renewals in-horizon
 
-  const expectedValuePaise = lineRows.reduce(
-    (sum, r) => sum + Math.round(r.qty * r.unit_price_paise),
-    0,
-  );
+  // Look up each referenced renewal term's logic + rates, so a line renews by
+  // its own basis (escalation / AMC / one-time / flat). Absent → flat.
+  const termIds = [...new Set(lineRows.map((r) => r.renewal_term_id).filter((id): id is string => !!id))];
+  const termById: Record<string, { logic: string | null; escalation_pct: number | null; amc_pct: number | null }> = {};
+  if (termIds.length > 0) {
+    const { data: terms } = await supabase
+      .from("renewal_terms")
+      .select("id, logic, escalation_pct, amc_pct")
+      .in("id", termIds);
+    for (const t of terms ?? []) {
+      termById[t.id as string] = {
+        logic: (t.logic as string | null) ?? null,
+        escalation_pct: (t.escalation_pct as number | null) ?? null,
+        amc_pct: (t.amc_pct as number | null) ?? null,
+      };
+    }
+  }
+
+  const renewalLines: RenewalLine[] = lineRows.map((r) => {
+    const term = r.renewal_term_id ? termById[r.renewal_term_id] : undefined;
+    return {
+      basePaise: Math.round(r.qty * r.unit_price_paise),
+      logic: term?.logic ?? null,
+      escalationPct: term?.escalation_pct ?? null,
+      amcPct: term?.amc_pct ?? null,
+    };
+  });
 
   const rows = cycles.map((c) => ({
     po_id: poId,
@@ -279,7 +303,7 @@ async function generateRenewals(
     year_number: c.yearNumber,
     offset_months: c.offsetMonths,
     term_months: c.termMonths,
-    expected_value_paise: expectedValuePaise,
+    expected_value_paise: renewalExpectedPaise(renewalLines, c.yearNumber),
   }));
 
   const { error } = await supabase.from("renewals").insert(rows);
@@ -301,7 +325,10 @@ async function generateRenewals(
     action: "create",
     entity_type: "renewal",
     entity_id: poId,
-    after: { generated_years: cycles.map((c) => c.yearNumber), expectedValuePaise },
+    after: {
+      generated_years: cycles.map((c) => c.yearNumber),
+      expected_values_paise: rows.map((r) => r.expected_value_paise),
+    },
   });
 }
 

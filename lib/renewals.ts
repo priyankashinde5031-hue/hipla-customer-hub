@@ -67,6 +67,69 @@ export function renewalDate(goLiveDate: string | null | undefined, offsetMonths:
   return addMonths(goLiveDate, offsetMonths);
 }
 
+// The renewal basis a term can carry. These string values are the single
+// source of truth for the `logic` catalog options (see lib/catalogs.ts) and the
+// switch below — keep the two in lockstep.
+export const RENEWAL_LOGIC = {
+  escalation: "Recurring — with escalation",
+  flat: "Recurring — flat",
+  oneTime: "One-time — no renewal",
+  amc: "AMC — annual maintenance",
+} as const;
+
+// One PO line's Year-1 baseline plus the renewal basis carried by its term.
+// Only the percentage relevant to `logic` is used; the other is ignored.
+export type RenewalLine = {
+  basePaise: number; // qty × unit price for this line, in paise
+  logic: string | null | undefined; // one of RENEWAL_LOGIC, or null (→ flat)
+  escalationPct: number | null | undefined; // per-year compounding step-up %
+  amcPct: number | null | undefined; // annual maintenance as a flat % of base
+};
+
+// This line's contribution to the renewal in a given contract year, per its
+// logic. Rounded to whole paise (CLAUDE.md: money is integer paise).
+//   * escalation → base × (1 + pct/100)^yearsElapsed  (compounds each year)
+//   * AMC        → base × pct/100                       (flat maintenance fee)
+//   * one-time   → 0                                    (no renewal at all)
+//   * flat / unknown / null → base                      (repeats unchanged)
+function renewalLinePaise(line: RenewalLine, yearsElapsed: number): number {
+  switch (line.logic) {
+    case RENEWAL_LOGIC.escalation: {
+      const pct = line.escalationPct && line.escalationPct > 0 ? line.escalationPct : 0;
+      return Math.round(line.basePaise * Math.pow(1 + pct / 100, yearsElapsed));
+    }
+    case RENEWAL_LOGIC.amc: {
+      const pct = line.amcPct && line.amcPct > 0 ? line.amcPct : 0;
+      return Math.round((line.basePaise * pct) / 100);
+    }
+    case RENEWAL_LOGIC.oneTime:
+      return 0;
+    default:
+      return line.basePaise; // flat, or no term recorded
+  }
+}
+
+// Per-line renewal contribution (paise) for a contract year — same order as
+// `lines`. Callers that only need the total use renewalExpectedPaise; the Site
+// 360 uses this to show how each line rolls up into the expected value.
+export function renewalLineValuesPaise(
+  lines: RenewalLine[],
+  yearNumber: number,
+): number[] {
+  const yearsElapsed = Number.isFinite(yearNumber) ? Math.max(0, Math.round(yearNumber) - 1) : 0;
+  return lines.map((line) => renewalLinePaise(line, yearsElapsed));
+}
+
+// Expected renewal value (paise) for the contract year `yearNumber`, summing
+// each line's contribution under its own renewal logic. `yearsElapsed` counts
+// whole contract years since Year 1: year 2 → 1, year 3 → 2, and so on.
+export function renewalExpectedPaise(
+  lines: RenewalLine[],
+  yearNumber: number,
+): number {
+  return renewalLineValuesPaise(lines, yearNumber).reduce((sum, v) => sum + v, 0);
+}
+
 // Deviation % = ((actual − expected) / expected) × 100. By rule, 0% when the
 // expected value is 0, null, or missing (no baseline to deviate from).
 export function deviationPercent(

@@ -1,11 +1,8 @@
-import Link from "next/link";
 import { redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { PageTransition } from "./page-transition";
 import { BackButton } from "./back-button";
-
-const navLinkClass =
-  "rounded-md px-2 py-1.5 text-sm text-slate-600 hover:bg-slate-100 hover:text-gray-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50 focus-visible:ring-offset-2";
+import { SidebarNav } from "./nav";
 
 export default async function DashboardLayout({
   children,
@@ -26,17 +23,7 @@ export default async function DashboardLayout({
           Hipla Customer Hub
         </div>
 
-        <nav className="mt-8 flex flex-col gap-1">
-          <Link href="/" className={navLinkClass}>
-            Dashboard
-          </Link>
-          <Link href="/organizations" className={navLinkClass}>
-            Organizations
-          </Link>
-          <Link href="/settings" className={navLinkClass}>
-            Settings
-          </Link>
-        </nav>
+        <SidebarNav />
 
         <div className="mt-auto px-2">
           <p className="truncate text-xs text-slate-400">{data.user.email}</p>

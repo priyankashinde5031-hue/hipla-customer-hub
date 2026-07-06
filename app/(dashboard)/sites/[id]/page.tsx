@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
@@ -15,10 +16,11 @@ import { EditInvoiceButton } from "./invoice-edit-form";
 import {
   RenewalsForPo,
   type RenewalCardData,
+  type RenewalBreakdownLine,
   type PaymentTermOption,
 } from "./renewals-section";
 import type { PaymentTermSpec } from "@/lib/invoicing";
-import { renewalDate } from "@/lib/renewals";
+import { renewalDate, renewalLineValuesPaise, RENEWAL_LOGIC, type RenewalLine } from "@/lib/renewals";
 import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/date";
 
 const STATUS_STYLES: Record<string, string> = {
@@ -196,7 +198,7 @@ export default async function SitePage({
            product:products!product_id ( name ),
            line_category:product_categories!product_category_id ( name ),
            line_cost_type:cost_types!cost_type_id ( name ),
-           renewal_term:renewal_terms!renewal_term_id ( name )
+           renewal_term:renewal_terms!renewal_term_id ( name, logic, escalation_pct, amc_pct )
          )
        )`,
     )
@@ -273,8 +275,9 @@ export default async function SitePage({
     .from("invoices")
     .select(
       `id, po_id, invoice_number, amount_paise, gst_amount_paise, total_paise,
-       issue_date, due_date, status,
-       purchase_order:purchase_orders ( po_number )`,
+       issue_date, due_date, status, renewal_id,
+       purchase_order:purchase_orders ( po_number ),
+       renewal:renewals!renewal_id ( year_number )`,
     )
     .eq("billed_site_id", id)
     .order("issue_date", { ascending: false });
@@ -467,6 +470,7 @@ export default async function SitePage({
     modulesRes,
     orgSitesRes,
     ownersRes,
+    renewalPoTypesRes,
   ] = await Promise.all([
     getCurrentInternalUser(),
     supabase.from("po_types").select("id, name").eq("active", true).order("name"),
@@ -486,6 +490,7 @@ export default async function SitePage({
       ? supabase.from("sites").select("id, name").eq("organization_id", orgId).order("name")
       : Promise.resolve({ data: [] as { id: string; name: string }[] }),
     supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
+    supabase.from("renewal_po_types").select("id, name").eq("active", true).order("name"),
   ]);
 
   const canEdit = canEditCatalogs(user);
@@ -502,6 +507,8 @@ export default async function SitePage({
       billing_schedule_days: t.billing_schedule_days ?? null,
     }),
   );
+
+  const renewalPoTypeOptions = renewalPoTypesRes.data ?? [];
 
   const poFormOptions = {
     organizationId: orgId ?? "",
@@ -534,12 +541,42 @@ export default async function SitePage({
         .select(
           `id, po_id, year_number, offset_months, term_months,
            expected_value_paise, renewal_value_paise, renewal_received_date,
-           payment_terms_id, status,
+           renewal_date_override, payment_terms_id, renewal_po_type_id, status,
            attachment:attachments!attachment_id ( storage_path, original_filename )`,
         )
         .in("po_id", poIds)
         .order("year_number")
     : { data: [] };
+
+  // Per-PO renewal lines (base amount + the term's logic/rates), so each card
+  // can show a line-by-line breakdown built with the SAME math the projection
+  // used. Keyed by po_id; each entry keeps the display metadata alongside the
+  // RenewalLine the math consumes.
+  const renewalLinesByPo = new Map<
+    string,
+    { meta: { description: string; renewalTermName: string | null; logic: string | null; ratePct: number | null; basePaise: number }; line: RenewalLine }[]
+  >();
+  for (const po of purchaseOrders) {
+    const rows = (po.po_line_items || []).map((li) => {
+      const term = Array.isArray(li.renewal_term) ? li.renewal_term[0] : li.renewal_term;
+      const logic = (term?.logic as string | null) ?? null;
+      const escalationPct = (term?.escalation_pct as number | null) ?? null;
+      const amcPct = (term?.amc_pct as number | null) ?? null;
+      const basePaise = li.amount_paise ?? Math.round(li.qty * li.unit_price_paise);
+      return {
+        meta: {
+          description: li.description,
+          renewalTermName: (term?.name as string | null) ?? null,
+          logic,
+          // The rate that this logic actually uses (escalation vs AMC).
+          ratePct: logic === RENEWAL_LOGIC.amc ? amcPct : escalationPct,
+          basePaise,
+        },
+        line: { basePaise, logic, escalationPct, amcPct } satisfies RenewalLine,
+      };
+    });
+    renewalLinesByPo.set(po.id, rows);
+  }
 
   const renewalsByPo = new Map<string, RenewalCardData[]>();
   await Promise.all(
@@ -555,21 +592,43 @@ export default async function SitePage({
           url: signed?.signedUrl ?? null,
         };
       }
+      // Per-line contributions for this year, via the shared projection math.
+      const poLines = renewalLinesByPo.get(r.po_id) ?? [];
+      const lineValues = renewalLineValuesPaise(
+        poLines.map((x) => x.line),
+        r.year_number,
+      );
+      const breakdown: RenewalBreakdownLine[] = poLines.map((x, i) => ({
+        description: x.meta.description,
+        renewalTermName: x.meta.renewalTermName,
+        logic: x.meta.logic,
+        ratePct: x.meta.ratePct,
+        basePaise: x.meta.basePaise,
+        valuePaise: lineValues[i] ?? 0,
+      }));
+
+      // Auto date: anchor to the go-live of the project linked to THIS PO; fall
+      // back to the site's go-live when no project is linked yet. A manual
+      // override, when present, wins over this computed date.
+      const autoRenewalDate = renewalDate(
+        poGoLiveMap.get(r.po_id) ?? site.go_live_date,
+        r.offset_months,
+      );
+
       const card: RenewalCardData = {
         id: r.id,
         yearNumber: r.year_number,
-        // Anchor to the go-live of the project linked to THIS PO; fall back to
-        // the site's go-live when no project is linked yet.
-        renewalDate: renewalDate(
-          poGoLiveMap.get(r.po_id) ?? site.go_live_date,
-          r.offset_months,
-        ),
+        autoRenewalDate,
+        renewalDateOverride: r.renewal_date_override,
+        renewalDate: r.renewal_date_override ?? autoRenewalDate,
         expectedValuePaise: r.expected_value_paise,
         renewalValuePaise: r.renewal_value_paise,
         renewalReceivedDate: r.renewal_received_date,
         paymentTermsId: r.payment_terms_id,
+        renewalPoTypeId: r.renewal_po_type_id,
         status: r.status === "renewed" ? "renewed" : "upcoming",
         attachment: attached,
+        breakdown,
       };
       const list = renewalsByPo.get(r.po_id) || [];
       list.push(card);
@@ -1061,9 +1120,16 @@ export default async function SitePage({
                     </table>
                   )}
 
-                  <div className="mt-4 flex items-center justify-between">
-                    <h3 className="text-xs font-medium uppercase tracking-wide text-gray-500">
+                  <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
+                  <div className="flex items-center justify-between">
+                    <h3 className="flex items-center gap-2 text-base font-serif font-semibold text-indigo-900">
+                      <Receipt className="size-4 text-indigo-600" />
                       Invoices
+                      {poInvoices.length > 0 && (
+                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
+                          {poInvoices.length}
+                        </span>
+                      )}
                     </h3>
                     {canEdit && (
                       <span className="flex items-center gap-3">
@@ -1076,7 +1142,7 @@ export default async function SitePage({
                       No invoices raised against this PO for this site yet.
                     </p>
                   ) : (
-                    <div className="mt-2 space-y-3">
+                    <div className="mt-3 space-y-3">
                       {poInvoices.map((inv) => {
                         const balance = balancesByInvoice.get(inv.id);
                         const status = balance?.computed_status || inv.status;
@@ -1096,6 +1162,18 @@ export default async function SitePage({
                                 <span className="font-medium text-gray-900">
                                   {inv.invoice_number}
                                 </span>
+                                {(() => {
+                                  const rnw = Array.isArray(inv.renewal) ? inv.renewal[0] : inv.renewal;
+                                  return inv.renewal_id ? (
+                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
+                                      Renewal{rnw?.year_number ? ` · Yr ${rnw.year_number}` : ""}
+                                    </span>
+                                  ) : (
+                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
+                                      PO invoice
+                                    </span>
+                                  );
+                                })()}
                                 <span className="text-slate-500">
                                   Issued {formatDisplayDate(inv.issue_date)}
                                 </span>
@@ -1172,6 +1250,7 @@ export default async function SitePage({
                       })}
                     </div>
                   )}
+                  </div>
 
                   <RenewalsForPo
                     renewals={renewalsByPo.get(po.id) ?? []}
@@ -1179,6 +1258,7 @@ export default async function SitePage({
                     canEdit={canEdit}
                     goLiveSet={Boolean(site.go_live_date)}
                     paymentTermsOptions={renewalPaymentTermsOptions}
+                    renewalPoTypeOptions={renewalPoTypeOptions}
                   />
                 </div>
               </PoTableRow>

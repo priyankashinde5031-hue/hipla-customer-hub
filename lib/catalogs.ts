@@ -2,12 +2,18 @@
 // code"). One config per seeded catalog table drives one shared UI pattern
 // (list / add / edit / deactivate) instead of seven bespoke pages.
 
+import { RENEWAL_LOGIC } from "@/lib/renewals";
+
 export type CatalogField = {
   key: string;
   label: string;
   type: "text" | "number" | "select";
   required: boolean;
   options?: string[];
+  // Show this field only when another field's value is one of `in`. Used e.g.
+  // to reveal Escalation % only for escalating renewal terms. When hidden, the
+  // field is not submitted and its column is cleared to null.
+  showWhen?: { field: string; in: string[] };
 };
 
 export type CatalogConfig = {
@@ -100,7 +106,35 @@ export const CATALOGS: CatalogConfig[] = [
     description:
       "The renewal basis for a PO line item — e.g. Annually — 12% escalation, Hardware — one-time, Hardware with AMC.",
     uniqueField: "name",
-    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+    fields: [
+      { key: "name", label: "Name", type: "text", required: true },
+      {
+        key: "logic",
+        label: "Renewal logic",
+        type: "select",
+        required: true,
+        options: [
+          RENEWAL_LOGIC.escalation,
+          RENEWAL_LOGIC.flat,
+          RENEWAL_LOGIC.oneTime,
+          RENEWAL_LOGIC.amc,
+        ],
+      },
+      {
+        key: "escalation_pct",
+        label: "Escalation % (per year)",
+        type: "number",
+        required: false,
+        showWhen: { field: "logic", in: [RENEWAL_LOGIC.escalation] },
+      },
+      {
+        key: "amc_pct",
+        label: "AMC % (of line total)",
+        type: "number",
+        required: false,
+        showWhen: { field: "logic", in: [RENEWAL_LOGIC.amc] },
+      },
+    ],
   },
   {
     slug: "po-types",
@@ -108,6 +142,15 @@ export const CATALOGS: CatalogConfig[] = [
     label: "PO Types",
     singular: "PO Type",
     description: "Types of Purchase Orders raised against a Contract.",
+    uniqueField: "name",
+    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+  },
+  {
+    slug: "renewal-po-types",
+    table: "renewal_po_types",
+    label: "Renewal PO Types",
+    singular: "Renewal PO Type",
+    description: "Types of Purchase Order raised for a renewal year — recorded on the renewal card.",
     uniqueField: "name",
     fields: [{ key: "name", label: "Name", type: "text", required: true }],
   },

@@ -7,7 +7,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { formatPaise } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
-import { deviationPercent } from "@/lib/renewals";
+import { deviationPercent, RENEWAL_LOGIC } from "@/lib/renewals";
 import {
   updateRenewal,
   markRenewalDone,
@@ -25,16 +25,35 @@ export type PaymentTermOption = {
   billing_schedule_days: number | null;
 };
 
+// Renewal PO type option from the Settings renewal_po_types catalog.
+export type RenewalPoTypeOption = { id: string; name: string };
+
+// One PO line's contribution to this renewal year, stamped from the original PO
+// using the same math the projection uses — so a reader sees how the expected
+// value was reached, line by line.
+export type RenewalBreakdownLine = {
+  description: string;
+  renewalTermName: string | null;
+  logic: string | null;
+  ratePct: number | null; // escalation or AMC %, whichever the logic uses
+  basePaise: number; // Year-1 line amount (qty × unit price)
+  valuePaise: number; // this line's contribution in this renewal year
+};
+
 export type RenewalCardData = {
   id: string;
   yearNumber: number;
-  renewalDate: string | null; // computed from go-live; null = "—"
+  renewalDate: string | null; // effective date shown: override ?? auto; null = "—"
+  autoRenewalDate: string | null; // go-live-driven date; null when no go-live set
+  renewalDateOverride: string | null; // manual override; null = follow the auto date
   expectedValuePaise: number | null;
   renewalValuePaise: number | null;
   renewalReceivedDate: string | null;
   paymentTermsId: string | null;
+  renewalPoTypeId: string | null;
   status: "upcoming" | "renewed";
   attachment: { filename: string; url: string | null } | null;
+  breakdown: RenewalBreakdownLine[]; // per-line calculation from the origin PO
 };
 
 // Shared field styling so every control in the card — <Input>, native <select>,
@@ -79,21 +98,43 @@ function describeSchedule(term: PaymentTermOption | undefined): string {
   return `${freq}, ${timing}${due}`;
 }
 
+// Plain-English note for one breakdown line, e.g. "₹100.00 + 12%/yr" or
+// "One-time — not renewed". Explains, in words, how valuePaise was reached.
+function describeBreakdownLine(line: RenewalBreakdownLine): string {
+  const base = formatPaise(line.basePaise);
+  switch (line.logic) {
+    case RENEWAL_LOGIC.escalation:
+      return line.ratePct ? `${base} + ${line.ratePct}%/yr escalation` : `${base}, flat`;
+    case RENEWAL_LOGIC.amc:
+      return line.ratePct
+        ? `AMC ${line.ratePct}% of ${base}`
+        : `AMC, no % set`;
+    case RENEWAL_LOGIC.oneTime:
+      return `${base} one-time — not renewed`;
+    default:
+      return `${base}, flat`;
+  }
+}
+
 function RenewalCard({
   renewal,
   siteId,
   canEdit,
   paymentTermsOptions,
+  renewalPoTypeOptions,
 }: {
   renewal: RenewalCardData;
   siteId: string;
   canEdit: boolean;
   paymentTermsOptions: PaymentTermOption[];
+  renewalPoTypeOptions: RenewalPoTypeOption[];
 }) {
   const [expected, setExpected] = useState(paiseToInput(renewal.expectedValuePaise));
   const [value, setValue] = useState(paiseToInput(renewal.renewalValuePaise));
   const [received, setReceived] = useState(renewal.renewalReceivedDate ?? "");
+  const [dateOverride, setDateOverride] = useState(renewal.renewalDateOverride ?? "");
   const [termId, setTermId] = useState(renewal.paymentTermsId ?? "");
+  const [poTypeId, setPoTypeId] = useState(renewal.renewalPoTypeId ?? "");
   const [isSaving, startSave] = useTransition();
   const [isUploading, startUpload] = useTransition();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -125,7 +166,9 @@ function RenewalCard({
       expectedValueRupees: expected.trim() === "" ? null : Number(expected),
       renewalValueRupees: value.trim() === "" ? null : Number(value),
       renewalReceivedDate: received || null,
+      renewalDateOverride: dateOverride || null,
       paymentTermsId: termId || null,
+      renewalPoTypeId: poTypeId || null,
     };
   }
 
@@ -153,7 +196,12 @@ function RenewalCard({
         toast.error(result.error);
         return;
       }
-      toast.success(`Year ${renewal.yearNumber} marked as renewed.`);
+      const n = result.invoicesCreated ?? 0;
+      toast.success(
+        n > 0
+          ? `Year ${renewal.yearNumber} renewed — ${n} invoice${n === 1 ? "" : "s"} generated.`
+          : `Year ${renewal.yearNumber} marked as renewed.`,
+      );
     });
   }
 
@@ -205,11 +253,37 @@ function RenewalCard({
 
       <div className="border-t border-slate-200 px-3 py-3">
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
-          {/* Renewal date — read-only, computed */}
+          {/* Renewal date — auto from go-live, but editable as an override.
+              Empty = follow the go-live-driven date shown in the hint below. */}
           <div className="flex flex-col gap-1.5">
-            <Label>Renewal date</Label>
-            <p className={readOnlyFieldClass}>
-              {formatDate(renewal.renewalDate)}
+            <Label htmlFor={`rdate-${renewal.id}`}>Renewal date</Label>
+            <input
+              id={`rdate-${renewal.id}`}
+              type="date"
+              value={dateOverride || renewal.autoRenewalDate || ""}
+              onChange={(e) => setDateOverride(e.target.value)}
+              disabled={!canEdit || isDone}
+              className={inputClass}
+            />
+            <p className="text-xs text-slate-400">
+              {dateOverride ? (
+                <>
+                  Manually set.{" "}
+                  {canEdit && !isDone && (
+                    <button
+                      type="button"
+                      onClick={() => setDateOverride("")}
+                      className="font-medium text-indigo-600 hover:text-indigo-700"
+                    >
+                      Reset to go-live date{renewal.autoRenewalDate ? ` (${formatDate(renewal.autoRenewalDate)})` : ""}
+                    </button>
+                  )}
+                </>
+              ) : renewal.autoRenewalDate ? (
+                "Auto — from the implementation go-live date. Change it to override."
+              ) : (
+                "Set the Go Live Date in Implementation (Stage 4), or enter a date here."
+              )}
             </p>
           </div>
 
@@ -296,8 +370,68 @@ function RenewalCard({
           </div>
         </div>
 
-        {/* PO attachment */}
-        <div className="mt-4 flex flex-col gap-1.5">
+        {/* Expected value breakdown — how each PO line rolls into the total,
+            using the same logic that generated the projection. */}
+        {renewal.breakdown.length > 0 && (
+          <div className="mt-4 flex flex-col gap-1.5">
+            <Label>How the expected value is calculated</Label>
+            <div className="overflow-hidden rounded-lg border border-slate-200">
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="bg-slate-50 text-left text-xs uppercase tracking-wide text-slate-500">
+                    <th className="px-3 py-2 font-medium">Line item</th>
+                    <th className="px-3 py-2 font-medium">Renewal basis</th>
+                    <th className="px-3 py-2 text-right font-medium">Year {renewal.yearNumber} value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renewal.breakdown.map((line, i) => (
+                    <tr key={i} className="border-t border-slate-100">
+                      <td className="px-3 py-2 text-slate-700">{line.description}</td>
+                      <td className="px-3 py-2 text-slate-500">{describeBreakdownLine(line)}</td>
+                      <td className="px-3 py-2 text-right tabular-nums text-slate-700">
+                        {formatPaise(line.valuePaise)}
+                      </td>
+                    </tr>
+                  ))}
+                  <tr className="border-t border-slate-200 bg-slate-50">
+                    <td className="px-3 py-2 font-medium text-gray-900" colSpan={2}>
+                      Expected renewal value
+                    </td>
+                    <td className="px-3 py-2 text-right font-semibold tabular-nums text-gray-900">
+                      {formatPaise(renewal.breakdown.reduce((s, l) => s + l.valuePaise, 0))}
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <p className="text-xs text-slate-400">
+              This is the projected baseline. You can still override the Expected value above.
+            </p>
+          </div>
+        )}
+
+        {/* Renewal PO type + PO attachment, side by side */}
+        <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="flex flex-col gap-1.5">
+          <Label htmlFor={`potype-${renewal.id}`}>Renewal PO type</Label>
+          <select
+            id={`potype-${renewal.id}`}
+            value={poTypeId}
+            onChange={(e) => setPoTypeId(e.target.value)}
+            disabled={!canEdit || isDone}
+            className={inputClass}
+          >
+            <option value="">—</option>
+            {renewalPoTypeOptions.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        </div>
+
+        <div className="flex flex-col gap-1.5">
           <Label>PO attachment</Label>
           <div className="flex flex-wrap items-center gap-3">
             {renewal.attachment ? (
@@ -335,6 +469,7 @@ function RenewalCard({
               </span>
             )}
           </div>
+        </div>
         </div>
 
         {/* Actions */}
@@ -377,12 +512,14 @@ export function RenewalsForPo({
   canEdit,
   goLiveSet,
   paymentTermsOptions,
+  renewalPoTypeOptions,
 }: {
   renewals: RenewalCardData[];
   siteId: string;
   canEdit: boolean;
   goLiveSet: boolean;
   paymentTermsOptions: PaymentTermOption[];
+  renewalPoTypeOptions: RenewalPoTypeOption[];
 }) {
   return (
     <div className="mt-4">
@@ -411,6 +548,7 @@ export function RenewalsForPo({
               siteId={siteId}
               canEdit={canEdit}
               paymentTermsOptions={paymentTermsOptions}
+              renewalPoTypeOptions={renewalPoTypeOptions}
             />
           ))}
         </div>
