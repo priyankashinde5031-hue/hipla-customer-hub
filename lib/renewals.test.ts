@@ -5,7 +5,10 @@ import {
   renewalDate,
   deviationPercent,
   renewalExpectedPaise,
+  planRenewalSync,
   RENEWAL_LOGIC,
+  type DesiredRenewal,
+  type ExistingRenewal,
 } from "./renewals";
 
 describe("generateRenewalSchedule", () => {
@@ -119,6 +122,92 @@ describe("renewalExpectedPaise", () => {
 
   it("is 0 for no lines", () => {
     expect(renewalExpectedPaise([], 3)).toBe(0);
+  });
+});
+
+describe("planRenewalSync", () => {
+  const desired = (yearNumber: number, expectedPaise = 100_00): DesiredRenewal => ({
+    yearNumber,
+    offsetMonths: (yearNumber - 1) * 12,
+    termMonths: 12,
+    expectedPaise,
+  });
+  const existing = (
+    id: string,
+    yearNumber: number,
+    over: Partial<ExistingRenewal> = {},
+  ): ExistingRenewal => ({
+    id,
+    yearNumber,
+    status: "upcoming",
+    hasInvoices: false,
+    hasAttachment: false,
+    ...over,
+  });
+
+  it("inserts every projected year on a fresh PO (no existing rows)", () => {
+    const plan = planRenewalSync([desired(2), desired(3), desired(4), desired(5)], []);
+    expect(plan.toInsert.map((d) => d.yearNumber)).toEqual([2, 3, 4, 5]);
+    expect(plan.toUpdate).toEqual([]);
+    expect(plan.toDeleteIds).toEqual([]);
+  });
+
+  it("generates nothing when the PO projects no ₹>0 years (one-time hardware)", () => {
+    // Caller filters expected>0, so an all-one-time PO passes an empty desired.
+    const plan = planRenewalSync([], []);
+    expect(plan.toInsert).toEqual([]);
+    expect(plan.toUpdate).toEqual([]);
+    expect(plan.toDeleteIds).toEqual([]);
+  });
+
+  it("removes pristine upcoming rows once their year drops to ₹0", () => {
+    // PO edited so Year 4 & 5 are no longer projected (e.g. lines went one-time).
+    const rows = [existing("a", 2), existing("b", 3), existing("c", 4), existing("d", 5)];
+    const plan = planRenewalSync([desired(2), desired(3)], rows);
+    expect(plan.toDeleteIds.sort()).toEqual(["c", "d"]);
+    expect(plan.toUpdate.map((u) => u.id).sort()).toEqual(["a", "b"]);
+    expect(plan.toInsert).toEqual([]);
+  });
+
+  it("recalculates the expected value of pristine upcoming rows on a PO edit", () => {
+    const plan = planRenewalSync([desired(2, 250_00)], [existing("a", 2)]);
+    expect(plan.toUpdate).toEqual([
+      { id: "a", expectedPaise: 250_00, offsetMonths: 12, termMonths: 12 },
+    ]);
+  });
+
+  it("adds a year that a PO edit newly pushes above ₹0", () => {
+    // Was a 1-line one-time PO (no rows); edit adds a recurring line → Year 2-5.
+    const plan = planRenewalSync(
+      [desired(2), desired(3), desired(4), desired(5)],
+      [existing("a", 2)],
+    );
+    expect(plan.toInsert.map((d) => d.yearNumber)).toEqual([3, 4, 5]);
+    expect(plan.toUpdate.map((u) => u.id)).toEqual(["a"]);
+  });
+
+  it("never rewrites a renewed year (history is protected)", () => {
+    const rows = [existing("a", 2, { status: "renewed" }), existing("b", 3)];
+    const plan = planRenewalSync([desired(2, 999_00), desired(3)], rows);
+    expect(plan.toUpdate.map((u) => u.id)).toEqual(["b"]); // "a" left alone
+    expect(plan.toDeleteIds).toEqual([]);
+  });
+
+  it("never deletes a renewed year even when it drops to ₹0", () => {
+    const rows = [existing("a", 4, { status: "renewed" })];
+    const plan = planRenewalSync([], rows); // Year 4 no longer projected
+    expect(plan.toDeleteIds).toEqual([]);
+    expect(plan.toUpdate).toEqual([]);
+  });
+
+  it("protects rows with invoices or an attached PO file from update and delete", () => {
+    const rows = [
+      existing("a", 2, { hasInvoices: true }),
+      existing("b", 3, { hasAttachment: true }),
+    ];
+    const plan = planRenewalSync([desired(2, 500_00)], rows); // Year 3 no longer projected
+    expect(plan.toUpdate).toEqual([]); // "a" protected by invoices
+    expect(plan.toDeleteIds).toEqual([]); // "b" protected by attachment
   });
 });
 

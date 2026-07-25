@@ -3,7 +3,14 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
-import { generateRenewalSchedule, renewalExpectedPaise, type RenewalLine } from "@/lib/renewals";
+import {
+  generateRenewalSchedule,
+  renewalExpectedPaise,
+  planRenewalSync,
+  type RenewalLine,
+  type DesiredRenewal,
+  type ExistingRenewal,
+} from "@/lib/renewals";
 
 // canEditCatalogs already encodes "admin or manager", the same rule the spec
 // uses for commercial edits — reuse it rather than inventing a parallel check.
@@ -166,8 +173,9 @@ export async function createPurchaseOrder(
   if (childError) return { error: childError };
 
   // Auto-generate the Year 2–5 renewal projections. The user never creates
-  // these by hand — they exist as soon as the PO does (spec §5.4).
-  await generateRenewals(
+  // these by hand — they exist as soon as the PO does (spec §5.4). Years that
+  // project to ₹0 (e.g. one-time hardware) produce no row.
+  await syncRenewals(
     supabase,
     user!.id,
     poId,
@@ -230,6 +238,20 @@ export async function updatePurchaseOrder(
   );
   if (childError) return { error: childError };
 
+  // Renewals are a projection of the PO, so an edit must flow through to them:
+  // recompute expected values, add years that newly project above ₹0, and drop
+  // pristine years that fell to ₹0. Renewals already "renewed", invoiced, or
+  // carrying a PO file are history and are left untouched (owner-confirmed).
+  await syncRenewals(
+    supabase,
+    user!.id,
+    poId,
+    (before.organization_id as string) ?? "",
+    originSiteId,
+    input.contractTimeId,
+    lineRows!,
+  );
+
   await writeAudit(supabase, user!.id, "update", poId, before, {
     ...po,
     site_ids: input.siteIds,
@@ -241,12 +263,19 @@ export async function updatePurchaseOrder(
   return { poId };
 }
 
-// Generate the renewal series for a freshly-created PO. Cadence is driven by
-// the PO's Contract time (months), defaulting to a yearly term when unset, and
-// capped at a 5-year horizon. Expected value starts from the Year-1 PO value
-// (ex-GST = sum of line items) and is escalated per year using each line's
-// renewal-term escalation % (e.g. 12% annually). It stays editable on each card.
-async function generateRenewals(
+// Reconcile a PO's renewal series with the PO's current state. Runs on both
+// create and edit, so the projections always derive from the PO (spec §5.4):
+//   * Cadence is driven by the PO's Contract time (months), yearly when unset,
+//     capped at a 5-year horizon.
+//   * Expected value per year = the Year-1 PO value (ex-GST = sum of line items)
+//     carried forward under each line's renewal basis (escalation / AMC / flat /
+//     one-time). A year that projects to ₹0 (e.g. one-time hardware) gets NO row.
+//   * On an edit, pristine "upcoming" years are recalculated, newly-positive
+//     years are added, and years that fell to ₹0 are removed — but renewals that
+//     are already renewed, invoiced, or carry a PO file are left as history.
+// The insert/update/delete decision itself is the pure, unit-tested
+// planRenewalSync; this function only gathers state and executes the plan.
+async function syncRenewals(
   supabase: Awaited<ReturnType<typeof createClient>>,
   actorId: string,
   poId: string,
@@ -266,7 +295,6 @@ async function generateRenewals(
   }
 
   const cycles = generateRenewalSchedule(initialTermMonths);
-  if (cycles.length === 0) return; // e.g. a 5-year initial term has no renewals in-horizon
 
   // Look up each referenced renewal term's logic + rates, so a line renews by
   // its own basis (escalation / AMC / one-time / flat). Absent → flat.
@@ -296,38 +324,92 @@ async function generateRenewals(
     };
   });
 
-  const rows = cycles.map((c) => ({
-    po_id: poId,
-    organization_id: organizationId,
-    anchor_site_id: anchorSiteId,
-    year_number: c.yearNumber,
-    offset_months: c.offsetMonths,
-    term_months: c.termMonths,
-    expected_value_paise: renewalExpectedPaise(renewalLines, c.yearNumber),
+  // Only years worth more than ₹0 are projected — a one-time PO produces none.
+  const desired: DesiredRenewal[] = cycles
+    .map((c) => ({
+      yearNumber: c.yearNumber,
+      offsetMonths: c.offsetMonths,
+      termMonths: c.termMonths,
+      expectedPaise: renewalExpectedPaise(renewalLines, c.yearNumber),
+    }))
+    .filter((d) => d.expectedPaise > 0);
+
+  // Existing rows + the flags that mark a renewal as protected history.
+  const { data: existingRows } = await supabase
+    .from("renewals")
+    .select("id, year_number, status, attachment_id")
+    .eq("po_id", poId);
+
+  const ids = (existingRows ?? []).map((r) => r.id as string);
+  const withInvoices = new Set<string>();
+  if (ids.length > 0) {
+    const { data: invRows } = await supabase
+      .from("invoices")
+      .select("renewal_id")
+      .in("renewal_id", ids);
+    for (const i of invRows ?? []) {
+      if (i.renewal_id) withInvoices.add(i.renewal_id as string);
+    }
+  }
+
+  const existing: ExistingRenewal[] = (existingRows ?? []).map((r) => ({
+    id: r.id as string,
+    yearNumber: r.year_number as number,
+    status: (r.status as "upcoming" | "renewed") ?? "upcoming",
+    hasInvoices: withInvoices.has(r.id as string),
+    hasAttachment: r.attachment_id != null,
   }));
 
-  const { error } = await supabase.from("renewals").insert(rows);
-  if (error) {
-    // Don't fail PO creation if renewal generation hiccups — log via audit so
-    // it's visible, and the renewals can be regenerated later.
-    await supabase.from("audit_log").insert({
-      actor_id: actorId,
-      action: "error",
-      entity_type: "renewal",
-      entity_id: poId,
-      after: { message: error.message },
-    });
+  const plan = planRenewalSync(desired, existing);
+  if (plan.toInsert.length === 0 && plan.toUpdate.length === 0 && plan.toDeleteIds.length === 0) {
     return;
+  }
+
+  const errors: string[] = [];
+
+  if (plan.toInsert.length > 0) {
+    const { error } = await supabase.from("renewals").insert(
+      plan.toInsert.map((d) => ({
+        po_id: poId,
+        organization_id: organizationId,
+        anchor_site_id: anchorSiteId,
+        year_number: d.yearNumber,
+        offset_months: d.offsetMonths,
+        term_months: d.termMonths,
+        expected_value_paise: d.expectedPaise,
+      })),
+    );
+    if (error) errors.push(`insert: ${error.message}`);
+  }
+
+  for (const u of plan.toUpdate) {
+    const { error } = await supabase
+      .from("renewals")
+      .update({
+        expected_value_paise: u.expectedPaise,
+        offset_months: u.offsetMonths,
+        term_months: u.termMonths,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", u.id);
+    if (error) errors.push(`update ${u.id}: ${error.message}`);
+  }
+
+  if (plan.toDeleteIds.length > 0) {
+    const { error } = await supabase.from("renewals").delete().in("id", plan.toDeleteIds);
+    if (error) errors.push(`delete: ${error.message}`);
   }
 
   await supabase.from("audit_log").insert({
     actor_id: actorId,
-    action: "create",
+    action: errors.length > 0 ? "error" : "update",
     entity_type: "renewal",
     entity_id: poId,
     after: {
-      generated_years: cycles.map((c) => c.yearNumber),
-      expected_values_paise: rows.map((r) => r.expected_value_paise),
+      inserted_years: plan.toInsert.map((d) => d.yearNumber),
+      updated_ids: plan.toUpdate.map((u) => u.id),
+      deleted_ids: plan.toDeleteIds,
+      ...(errors.length > 0 ? { errors } : {}),
     },
   });
 }
