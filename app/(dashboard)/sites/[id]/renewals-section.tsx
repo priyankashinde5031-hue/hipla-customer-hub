@@ -137,9 +137,21 @@ function RenewalCard({
   const [poTypeId, setPoTypeId] = useState(renewal.renewalPoTypeId ?? "");
   const [isSaving, startSave] = useTransition();
   const [isUploading, startUpload] = useTransition();
+  const [isEditing, setIsEditing] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const isDone = renewal.status === "renewed";
+  // Once renewed, fields lock by default — "Edit" unlocks them for this session.
+  const fieldsDisabled = !canEdit || (isDone && !isEditing);
+
+  function resetFields() {
+    setExpected(paiseToInput(renewal.expectedValuePaise));
+    setValue(paiseToInput(renewal.renewalValuePaise));
+    setReceived(renewal.renewalReceivedDate ?? "");
+    setDateOverride(renewal.renewalDateOverride ?? "");
+    setTermId(renewal.paymentTermsId ?? "");
+    setPoTypeId(renewal.renewalPoTypeId ?? "");
+  }
 
   // Live deviation from whatever is currently typed.
   const expectedPaise = expected.trim() === "" ? 0 : Math.round(Number(expected) * 100);
@@ -180,6 +192,7 @@ function RenewalCard({
         return;
       }
       toast.success(`Year ${renewal.yearNumber} saved.`);
+      setIsEditing(false);
     });
   }
 
@@ -205,12 +218,9 @@ function RenewalCard({
     });
   }
 
-  function upload() {
-    const file = fileRef.current?.files?.[0];
-    if (!file) {
-      toast.error("Choose a file first.");
-      return;
-    }
+  function handleFileChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
     const fd = new FormData();
     fd.set("renewalId", renewal.id);
     fd.set("siteId", siteId);
@@ -219,9 +229,9 @@ function RenewalCard({
       const result = await uploadRenewalAttachment(fd);
       if (result.error) {
         toast.error(result.error);
-        return;
+      } else {
+        toast.success("PO attached.");
       }
-      toast.success("PO attached.");
       if (fileRef.current) fileRef.current.value = "";
     });
   }
@@ -262,7 +272,7 @@ function RenewalCard({
               type="date"
               value={dateOverride || renewal.autoRenewalDate || ""}
               onChange={(e) => setDateOverride(e.target.value)}
-              disabled={!canEdit || isDone}
+              disabled={fieldsDisabled}
               className={inputClass}
             />
             <p className="text-xs text-slate-400">
@@ -297,7 +307,7 @@ function RenewalCard({
               step="0.01"
               value={expected}
               onChange={(e) => setExpected(e.target.value)}
-              disabled={!canEdit || isDone}
+              disabled={fieldsDisabled}
               placeholder="0"
             />
           </div>
@@ -322,7 +332,7 @@ function RenewalCard({
               step="0.01"
               value={value}
               onChange={(e) => setValue(e.target.value)}
-              disabled={!canEdit || isDone}
+              disabled={fieldsDisabled}
               placeholder="0"
             />
           </div>
@@ -337,7 +347,7 @@ function RenewalCard({
               type="date"
               value={received}
               onChange={(e) => setReceived(e.target.value)}
-              disabled={!canEdit || isDone}
+              disabled={fieldsDisabled}
               className={inputClass}
             />
           </div>
@@ -349,7 +359,7 @@ function RenewalCard({
               id={`terms-${renewal.id}`}
               value={termId}
               onChange={(e) => setTermId(e.target.value)}
-              disabled={!canEdit || isDone}
+              disabled={fieldsDisabled}
               className={inputClass}
             >
               <option value="">—</option>
@@ -419,7 +429,7 @@ function RenewalCard({
             id={`potype-${renewal.id}`}
             value={poTypeId}
             onChange={(e) => setPoTypeId(e.target.value)}
-            disabled={!canEdit || isDone}
+            disabled={fieldsDisabled}
             className={inputClass}
           >
             <option value="">—</option>
@@ -455,16 +465,21 @@ function RenewalCard({
                 <input
                   ref={fileRef}
                   type="file"
-                  className="text-sm text-slate-600 file:mr-2 file:rounded-md file:border file:border-slate-200 file:bg-slate-50 file:px-2 file:py-1 file:text-xs file:text-slate-700"
+                  className="hidden"
+                  onChange={handleFileChange}
                 />
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={upload}
+                  onClick={() => fileRef.current?.click()}
                   disabled={isUploading}
                 >
-                  {isUploading ? "Uploading…" : "Upload"}
+                  {isUploading
+                    ? "Uploading…"
+                    : renewal.attachment
+                      ? "Replace file"
+                      : "Upload PO"}
                 </Button>
               </span>
             )}
@@ -497,6 +512,45 @@ function RenewalCard({
               <span className="text-xs text-slate-400">
                 (Fill Renewal Value &amp; Received Date)
               </span>
+            )}
+          </div>
+        )}
+
+        {canEdit && isDone && (
+          <div className="mt-5 flex flex-wrap items-center gap-3">
+            {isEditing ? (
+              <>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => {
+                    resetFields();
+                    setIsEditing(false);
+                  }}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={save}
+                  disabled={isSaving}
+                  className="bg-indigo-600 text-white hover:bg-indigo-700"
+                >
+                  {isSaving ? "Saving…" : "Save"}
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => setIsEditing(true)}
+              >
+                Edit
+              </Button>
             )}
           </div>
         )}
