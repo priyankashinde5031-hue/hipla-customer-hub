@@ -130,6 +130,93 @@ export function renewalExpectedPaise(
   return renewalLineValuesPaise(lines, yearNumber).reduce((sum, v) => sum + v, 0);
 }
 
+// ---------------------------------------------------------------------------
+// Renewal ⇄ PO sync planning.
+//
+// Renewals are a projection of the PO, so they must (re)derive from it — both
+// when the PO is first created and whenever it is edited. Two rules the owner
+// confirmed:
+//   1. A year worth ₹0 (e.g. a one-time hardware PO, or every line one-time)
+//      should NOT produce a renewal row. If a later PO edit pushes that year
+//      above ₹0, the row is then created.
+//   2. Renewals that already carry committed work are HISTORY and must never be
+//      rewritten by a PO edit: anything already marked "renewed", anything with
+//      invoices raised against it, or anything with a PO file attached. Only
+//      pristine "upcoming" rows are recalculated or removed.
+// This function is pure so the decision is unit-tested; the DB work (the actual
+// insert/update/delete) lives in the server action that calls it.
+// ---------------------------------------------------------------------------
+
+// A renewal year the PO currently projects, already filtered to expected > 0.
+export type DesiredRenewal = {
+  yearNumber: number;
+  offsetMonths: number;
+  termMonths: number;
+  expectedPaise: number; // > 0 by construction
+};
+
+// An existing renewal row, reduced to the flags the sync decision needs.
+export type ExistingRenewal = {
+  id: string;
+  yearNumber: number;
+  status: "upcoming" | "renewed";
+  hasInvoices: boolean; // any invoice raised against this renewal
+  hasAttachment: boolean; // a renewal PO file was uploaded
+};
+
+export type RenewalSyncPlan = {
+  toInsert: DesiredRenewal[];
+  toUpdate: { id: string; expectedPaise: number; offsetMonths: number; termMonths: number }[];
+  toDeleteIds: string[];
+};
+
+// A renewal is "committed" once real work hangs off it — it becomes read-only
+// to the PO-edit sync so history is never rewritten (owner-confirmed).
+function isCommitted(e: ExistingRenewal): boolean {
+  return e.status === "renewed" || e.hasInvoices || e.hasAttachment;
+}
+
+// Reconcile the PO's projected renewal years (`desired`, expected > 0 only)
+// against the rows already in the DB (`existing`):
+//   * a projected year with no row            → insert
+//   * a projected year with a pristine row     → update (reflect the new PO)
+//   * a projected year with a committed row     → leave (history)
+//   * a pristine row for a no-longer-projected year (now ₹0 / out of horizon) → delete
+//   * a committed row for such a year           → leave (history)
+export function planRenewalSync(
+  desired: DesiredRenewal[],
+  existing: ExistingRenewal[],
+): RenewalSyncPlan {
+  const existingByYear = new Map<number, ExistingRenewal>();
+  for (const e of existing) existingByYear.set(e.yearNumber, e);
+  const desiredYears = new Set(desired.map((d) => d.yearNumber));
+
+  const plan: RenewalSyncPlan = { toInsert: [], toUpdate: [], toDeleteIds: [] };
+
+  for (const d of desired) {
+    const e = existingByYear.get(d.yearNumber);
+    if (!e) {
+      plan.toInsert.push(d);
+    } else if (!isCommitted(e)) {
+      plan.toUpdate.push({
+        id: e.id,
+        expectedPaise: d.expectedPaise,
+        offsetMonths: d.offsetMonths,
+        termMonths: d.termMonths,
+      });
+    }
+    // committed → leave untouched
+  }
+
+  for (const e of existing) {
+    if (!desiredYears.has(e.yearNumber) && !isCommitted(e)) {
+      plan.toDeleteIds.push(e.id);
+    }
+  }
+
+  return plan;
+}
+
 // Deviation % = ((actual − expected) / expected) × 100. By rule, 0% when the
 // expected value is 0, null, or missing (no baseline to deviate from).
 export function deviationPercent(
