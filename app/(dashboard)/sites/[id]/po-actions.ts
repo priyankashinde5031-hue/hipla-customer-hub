@@ -396,8 +396,19 @@ async function syncRenewals(
   }
 
   if (plan.toDeleteIds.length > 0) {
-    const { error } = await supabase.from("renewals").delete().in("id", plan.toDeleteIds);
+    // Select the deleted rows back so a silently-refused delete (e.g. a missing
+    // RLS policy returns success with 0 rows) is caught, not lost.
+    const { data: deleted, error } = await supabase
+      .from("renewals")
+      .delete()
+      .in("id", plan.toDeleteIds)
+      .select("id");
     if (error) errors.push(`delete: ${error.message}`);
+    else if ((deleted?.length ?? 0) !== plan.toDeleteIds.length) {
+      errors.push(
+        `delete: expected ${plan.toDeleteIds.length} rows, removed ${deleted?.length ?? 0}`,
+      );
+    }
   }
 
   await supabase.from("audit_log").insert({
