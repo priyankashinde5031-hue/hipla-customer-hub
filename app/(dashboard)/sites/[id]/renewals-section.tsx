@@ -1,6 +1,6 @@
 "use client";
 
-import { useRef, useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -152,6 +152,32 @@ function RenewalCard({
     setTermId(renewal.paymentTermsId ?? "");
     setPoTypeId(renewal.renewalPoTypeId ?? "");
   }
+
+  // Re-seed the inputs when the server row changes underneath us — e.g. editing
+  // the parent PO recalculates the expected value. Without this, the fields keep
+  // their first-mount useState value and show stale numbers even though the
+  // header and breakdown (read straight from props) already show the new ones.
+  // Guarded by a signature so it only fires on a real server change, not on
+  // every keystroke, so in-progress typing isn't clobbered.
+  const serverSig = [
+    renewal.expectedValuePaise,
+    renewal.renewalValuePaise,
+    renewal.renewalReceivedDate,
+    renewal.renewalDateOverride,
+    renewal.paymentTermsId,
+    renewal.renewalPoTypeId,
+    renewal.status,
+  ].join("|");
+  const lastServerSig = useRef(serverSig);
+  useEffect(() => {
+    if (lastServerSig.current !== serverSig) {
+      lastServerSig.current = serverSig;
+      resetFields();
+      setIsEditing(false);
+    }
+    // resetFields reads the latest `renewal` prop; serverSig gates the re-seed.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [serverSig]);
 
   // Live deviation from whatever is currently typed.
   const expectedPaise = expected.trim() === "" ? 0 : Math.round(Number(expected) * 100);
