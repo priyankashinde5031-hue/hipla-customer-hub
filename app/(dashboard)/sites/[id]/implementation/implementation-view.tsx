@@ -9,6 +9,7 @@ import {
   ChevronRight,
   Circle,
   CircleDot,
+  History,
   Pencil,
   Plus,
   Upload,
@@ -28,6 +29,7 @@ import {
 } from "./stage-config";
 import {
   createProject,
+  backfillCompletedProject,
   renameProject,
   updateProjectPo,
   saveStage,
@@ -145,6 +147,7 @@ export function ImplementationView({
 }) {
   const router = useRouter();
   const [creating, setCreating] = useState(false);
+  const [backfilling, setBackfilling] = useState(false);
   const [newName, setNewName] = useState("");
   const [newPoId, setNewPoId] = useState("");
   const [pending, startTransition] = useTransition();
@@ -207,10 +210,25 @@ export function ImplementationView({
                 Cancel
               </Button>
             </div>
+          ) : backfilling ? (
+            <BackfillForm
+              siteId={siteId}
+              pos={pos}
+              onDone={() => {
+                setBackfilling(false);
+                router.refresh();
+              }}
+              onCancel={() => setBackfilling(false)}
+            />
           ) : (
-            <Button size="sm" onClick={() => setCreating(true)}>
-              <Plus className="mr-1.5 h-4 w-4" /> New project
-            </Button>
+            <div className="flex flex-wrap items-center gap-2">
+              <Button size="sm" onClick={() => setCreating(true)}>
+                <Plus className="mr-1.5 h-4 w-4" /> New project
+              </Button>
+              <Button size="sm" variant="outline" onClick={() => setBackfilling(true)}>
+                <History className="mr-1.5 h-4 w-4" /> Record a past go-live
+              </Button>
+            </div>
           )}
         </div>
       )}
@@ -237,6 +255,139 @@ export function ImplementationView({
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ---- Record a past go-live (backfill) -------------------------------------
+// For the years of back-dated orders we don't want to re-walk through the
+// 5-stage stepper: one short form (PO + date + two files) that creates an
+// already-completed project. Writes the same fields the stepper would.
+
+function BackfillForm({
+  siteId,
+  pos,
+  onDone,
+  onCancel,
+}: {
+  siteId: string;
+  pos: PoOption[];
+  onDone: () => void;
+  onCancel: () => void;
+}) {
+  const [poId, setPoId] = useState("");
+  const [name, setName] = useState("");
+  const [goLiveDate, setGoLiveDate] = useState("");
+  const proofRef = useRef<HTMLInputElement>(null);
+  const commercialRef = useRef<HTMLInputElement>(null);
+  const [pending, startTransition] = useTransition();
+
+  function handleSave() {
+    if (!goLiveDate) {
+      toast.error("Enter the go-live date.");
+      return;
+    }
+    const fd = new FormData();
+    fd.set("siteId", siteId);
+    fd.set("projectName", name.trim());
+    fd.set("poId", poId);
+    fd.set("goLiveDate", goLiveDate);
+    const proof = proofRef.current?.files?.[0];
+    const commercial = commercialRef.current?.files?.[0];
+    if (proof) fd.set("goLiveProof", proof);
+    if (commercial) fd.set("commercial", commercial);
+
+    startTransition(async () => {
+      const res = await backfillCompletedProject(fd);
+      if (res.error) {
+        toast.error(res.error);
+        return;
+      }
+      toast.success("Past go-live recorded");
+      onDone();
+    });
+  }
+
+  const fileInputClass =
+    "block w-full text-xs text-slate-600 file:mr-3 file:rounded-lg file:border file:border-input file:bg-white file:px-2.5 file:py-1 file:text-xs file:font-medium file:text-slate-700 hover:file:border-gray-300";
+
+  return (
+    <div className="max-w-xl rounded-xl border border-gray-200 bg-white p-4 shadow-sm">
+      <h3 className="text-sm font-semibold text-gray-900">Record a past go-live</h3>
+      <p className="mt-0.5 text-xs text-slate-500">
+        For a site that already went live. This creates a completed
+        implementation project — no need to walk through the stages.
+      </p>
+
+      <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+        <div className="sm:col-span-2">
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Which PO / order
+          </label>
+          <select
+            value={poId}
+            onChange={(e) => setPoId(e.target.value)}
+            className={inputClass}
+          >
+            <option value="">No PO linked</option>
+            {pos.map((po) => (
+              <option key={po.id} value={po.id}>
+                {po.label}
+              </option>
+            ))}
+          </select>
+          <p className="mt-1 text-xs text-slate-400">
+            Recommended — the linked PO&apos;s renewals anchor to this date.
+          </p>
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Go-live date <span className="text-red-500">*</span>
+          </label>
+          <input
+            type="date"
+            value={goLiveDate}
+            onChange={(e) => setGoLiveDate(e.target.value)}
+            className={inputClass}
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Project name
+          </label>
+          <Input
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+            placeholder="Historical go-live"
+            className="h-8"
+          />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Go-live proof
+          </label>
+          <input ref={proofRef} type="file" className={fileInputClass} />
+        </div>
+
+        <div>
+          <label className="mb-1 block text-xs font-medium text-slate-600">
+            Commercial
+          </label>
+          <input ref={commercialRef} type="file" className={fileInputClass} />
+        </div>
+      </div>
+
+      <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3">
+        <Button size="sm" onClick={handleSave} disabled={pending || !goLiveDate}>
+          {pending ? "Saving…" : "Save"}
+        </Button>
+        <Button size="sm" variant="ghost" onClick={onCancel} disabled={pending}>
+          Cancel
+        </Button>
+      </div>
     </div>
   );
 }

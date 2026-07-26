@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
-import { missingRequiredFields, type StageData } from "./implementation/stage-config";
+import { missingRequiredFields, type StageData, type FileValue } from "./implementation/stage-config";
 
 // Same admin/manager rule the rest of the ops flow uses.
 const canEditImplementation = canEditCatalogs;
@@ -238,6 +238,40 @@ export async function autosaveStageDraft(
   return res.error ? { error: res.error } : {};
 }
 
+// Store one file → Storage + attachments row, returning the reference the stage
+// jsonb keeps (never the bytes). Shared by the interactive uploader and the
+// backfill action so both write files the same way.
+async function storeAttachment(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  userId: string,
+  projectId: string,
+  file: File,
+): Promise<{ error?: string; value?: FileValue }> {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
+  const path = `${projectId}/${Date.now()}-${safeName}`;
+
+  const { error: uploadErr } = await supabase.storage
+    .from("implementation-attachments")
+    .upload(path, file, { contentType: file.type || undefined, upsert: false });
+  if (uploadErr) return { error: uploadErr.message };
+
+  const { data: attachment, error: attErr } = await supabase
+    .from("attachments")
+    .insert({
+      storage_path: path,
+      original_filename: file.name,
+      mime_type: file.type || null,
+      uploaded_by: userId,
+    })
+    .select("id")
+    .single();
+  if (attErr || !attachment) {
+    return { error: attErr?.message ?? "Could not record the file." };
+  }
+
+  return { value: { attachmentId: attachment.id, filename: file.name, storagePath: path } };
+}
+
 // Upload an implementation file → Storage + attachments row. Mirrors
 // uploadPoAttachment in po-actions.ts. Returns the reference the stage jsonb
 // stores (never the bytes). Caller then saves the stage with the reference set.
@@ -255,28 +289,131 @@ export async function uploadImplementationAttachment(
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a file to upload." };
 
   const supabase = await createClient();
+  const res = await storeAttachment(supabase, user!.id, projectId, file);
+  if (res.error || !res.value) return { error: res.error ?? "Upload failed." };
 
-  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, "_");
-  const path = `${projectId}/${Date.now()}-${safeName}`;
+  return {
+    attachmentId: res.value.attachmentId,
+    filename: res.value.filename,
+    storagePath: res.value.storagePath,
+  };
+}
 
-  const { error: uploadErr } = await supabase.storage
-    .from("implementation-attachments")
-    .upload(path, file, { contentType: file.type || undefined, upsert: false });
-  if (uploadErr) return { error: uploadErr.message };
-
-  const { data: attachment, error: attErr } = await supabase
-    .from("attachments")
-    .insert({
-      storage_path: path,
-      original_filename: file.name,
-      mime_type: file.type || null,
-      uploaded_by: user!.id,
-    })
-    .select("id")
-    .single();
-  if (attErr || !attachment) {
-    return { error: attErr?.message ?? "Could not record the file." };
+// "Record a past go-live": create an implementation project that is ALREADY
+// finished, for the years of back-dated orders we don't want to re-walk through
+// the 5-stage stepper. Writes the same fields the stepper would — go-live date +
+// proof (Stage 4), commercial document (Stage 1's final quotation) — then marks
+// all five stages complete (the trigger flips overall_status to 'completed') and
+// sets the site live. New orders still go through the full stepper.
+export async function backfillCompletedProject(
+  formData: FormData,
+): Promise<{ error?: string; id?: string }> {
+  const user = await getCurrentInternalUser();
+  if (!canEditImplementation(user)) {
+    return { error: "You don't have permission to record a go-live." };
   }
 
-  return { attachmentId: attachment.id, filename: file.name, storagePath: path };
+  const siteId = String(formData.get("siteId") || "");
+  const projectName = String(formData.get("projectName") || "").trim() || "Historical go-live";
+  const poId = String(formData.get("poId") || "") || null;
+  const goLiveDate = String(formData.get("goLiveDate") || "").trim();
+  const proofFile = formData.get("goLiveProof");
+  const commercialFile = formData.get("commercial");
+
+  if (!siteId) return { error: "Missing site reference." };
+  if (!goLiveDate) return { error: "Enter the go-live date." };
+
+  const supabase = await createClient();
+
+  const { data: site } = await supabase
+    .from("sites")
+    .select("organization_id, go_live_date")
+    .eq("id", siteId)
+    .maybeSingle();
+  if (!site) return { error: "Site not found." };
+
+  // Create the project row (its 5 stage rows are seeded by the DB trigger).
+  let projectId: string | null = null;
+  let projectCode = "";
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const code = generateProjectCode();
+    const { data, error } = await supabase
+      .from("implementation_projects")
+      .insert({
+        site_id: siteId,
+        org_id: site.organization_id,
+        project_code: code,
+        project_name: projectName,
+        po_id: poId,
+      })
+      .select("id")
+      .single();
+    if (!error && data) {
+      projectId = data.id;
+      projectCode = code;
+      break;
+    }
+    if (error && error.code !== "23505") return { error: error.message };
+  }
+  if (!projectId) {
+    return { error: "Could not generate a unique project code — please retry." };
+  }
+
+  // Store the two optional files under the new project.
+  let proof: FileValue = null;
+  let commercial: FileValue = null;
+  if (proofFile instanceof File && proofFile.size > 0) {
+    const res = await storeAttachment(supabase, user!.id, projectId, proofFile);
+    if (res.error) return { error: res.error };
+    proof = res.value ?? null;
+  }
+  if (commercialFile instanceof File && commercialFile.size > 0) {
+    const res = await storeAttachment(supabase, user!.id, projectId, commercialFile);
+    if (res.error) return { error: res.error };
+    commercial = res.value ?? null;
+  }
+
+  // Write the known data into the stages it belongs to, then mark ALL five
+  // complete so the computed overall_status becomes 'completed'.
+  const stageData: Record<number, StageData> = {
+    1: commercial ? { finalQuotation: commercial } : {},
+    2: {},
+    3: {},
+    4: { goLiveDate, ...(proof ? { goLiveEmailProof: proof } : {}) },
+    5: {},
+  };
+  for (let n = 1; n <= 5; n++) {
+    const { error } = await supabase
+      .from("implementation_project_stages")
+      .update({
+        data: stageData[n],
+        stage_status: "complete",
+        updated_at: new Date().toISOString(),
+        updated_by: user!.id,
+      })
+      .eq("project_id", projectId)
+      .eq("stage_number", n);
+    if (error) return { error: error.message };
+  }
+
+  // Mirror the stepper's live-site side effects: seed the site-level go-live the
+  // first time (never clobber), and set the site live.
+  if (!site.go_live_date) {
+    await supabase.from("sites").update({ go_live_date: goLiveDate }).eq("id", siteId);
+  }
+  await supabase.from("sites").update({ status: "live" }).eq("id", siteId);
+
+  await writeAudit(supabase, user!.id, "backfill", projectId, null, {
+    project_code: projectCode,
+    project_name: projectName,
+    site_id: siteId,
+    po_id: poId,
+    go_live_date: goLiveDate,
+    has_proof: !!proof,
+    has_commercial: !!commercial,
+  });
+
+  revalidatePath(`/sites/${siteId}/implementation`);
+  revalidatePath(`/sites/${siteId}`);
+  return { id: projectId };
 }
