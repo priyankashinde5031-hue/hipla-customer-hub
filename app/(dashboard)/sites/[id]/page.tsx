@@ -1,6 +1,5 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { Receipt } from "lucide-react";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
@@ -11,8 +10,7 @@ import { SiteMetaCard } from "./site-meta-card";
 import { SiteStickyNav, type NavSection } from "./site-sticky-nav";
 import { ScopeChangesCard, type ScopeChangeRow } from "./scope-changes-view";
 import { InvoiceActionsForPo, type PoInvoiceContext } from "./invoice-form";
-import { RecordPaymentButton } from "./payment-form";
-import { EditInvoiceButton } from "./invoice-edit-form";
+import { InvoicesPanel } from "./invoices-panel";
 import {
   RenewalsForPo,
   type RenewalCardData,
@@ -22,28 +20,6 @@ import {
 import type { PaymentTermSpec } from "@/lib/invoicing";
 import { renewalDate, renewalLineValuesPaise, RENEWAL_LOGIC, type RenewalLine } from "@/lib/renewals";
 import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/date";
-
-const STATUS_STYLES: Record<string, string> = {
-  cleared: "bg-emerald-50 text-emerald-700",
-  "part-paid": "bg-amber-50 text-amber-700",
-  due: "bg-amber-50 text-amber-700",
-  overdue: "bg-red-50 text-red-700",
-  draft: "bg-slate-100 text-slate-600",
-  raised: "bg-slate-100 text-slate-600",
-  cancelled: "bg-slate-100 text-slate-400",
-};
-
-function StatusBadge({ status }: { status: string }) {
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-xs font-medium capitalize ${
-        STATUS_STYLES[status] || "bg-slate-100 text-slate-600"
-      }`}
-    >
-      {status}
-    </span>
-  );
-}
 
 // A metric card: label, primary value, and a secondary context line. Pass
 // value={null} for money that is ₹0 only because no invoices exist yet — the
@@ -1120,137 +1096,42 @@ export default async function SitePage({
                     </table>
                   )}
 
-                  <div className="mt-6 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4">
-                  <div className="flex items-center justify-between">
-                    <h3 className="flex items-center gap-2 text-base font-serif font-semibold text-indigo-900">
-                      <Receipt className="size-4 text-indigo-600" />
-                      Invoices
-                      {poInvoices.length > 0 && (
-                        <span className="rounded-full bg-indigo-100 px-2 py-0.5 text-xs font-medium text-indigo-700">
-                          {poInvoices.length}
-                        </span>
-                      )}
-                    </h3>
-                    {canEdit && (
-                      <span className="flex items-center gap-3">
+                  <InvoicesPanel
+                    invoices={poInvoices.map((inv) => {
+                      const balance = balancesByInvoice.get(inv.id);
+                      const rnw = Array.isArray(inv.renewal)
+                        ? inv.renewal[0]
+                        : inv.renewal;
+                      return {
+                        id: inv.id,
+                        invoice_number: inv.invoice_number,
+                        amount_paise: inv.amount_paise,
+                        gst_amount_paise: inv.gst_amount_paise,
+                        total_paise: inv.total_paise,
+                        status: inv.status,
+                        issue_date: inv.issue_date,
+                        due_date: inv.due_date,
+                        renewal_id: inv.renewal_id,
+                        yearNumber: rnw?.year_number ?? null,
+                        computedStatus: balance?.computed_status || inv.status,
+                        balance_paise: balance?.balance_paise ?? inv.total_paise,
+                        payments: (paymentsByInvoice.get(inv.id) || []).map((p) => ({
+                          id: p.id,
+                          received_date: p.received_date,
+                          mode: p.mode,
+                          reference: p.reference,
+                          amount_paise: p.amount_paise,
+                        })),
+                      };
+                    })}
+                    siteId={id}
+                    canEdit={canEdit}
+                    headerAction={
+                      canEdit ? (
                         <InvoiceActionsForPo ctx={invoiceCtx} siteId={id} />
-                      </span>
-                    )}
-                  </div>
-                  {poInvoices.length === 0 ? (
-                    <p className="mt-2 text-sm text-slate-400">
-                      No invoices raised against this PO for this site yet.
-                    </p>
-                  ) : (
-                    <div className="mt-3 space-y-3">
-                      {poInvoices.map((inv) => {
-                        const balance = balancesByInvoice.get(inv.id);
-                        const status = balance?.computed_status || inv.status;
-                        const isOverdue = status === "overdue";
-                        const invPayments = paymentsByInvoice.get(inv.id) || [];
-                        return (
-                          <div
-                            key={inv.id}
-                            className={`rounded-lg border shadow-sm ${
-                              isOverdue
-                                ? "border-red-300 bg-red-50/40"
-                                : "border-slate-300 bg-white"
-                            } p-3`}
-                          >
-                            <div className="flex flex-wrap items-baseline justify-between gap-2">
-                              <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-sm">
-                                <span className="font-medium text-gray-900">
-                                  {inv.invoice_number}
-                                </span>
-                                {(() => {
-                                  const rnw = Array.isArray(inv.renewal) ? inv.renewal[0] : inv.renewal;
-                                  return inv.renewal_id ? (
-                                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-800">
-                                      Renewal{rnw?.year_number ? ` · Yr ${rnw.year_number}` : ""}
-                                    </span>
-                                  ) : (
-                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-600">
-                                      PO invoice
-                                    </span>
-                                  );
-                                })()}
-                                <span className="text-slate-500">
-                                  Issued {formatDisplayDate(inv.issue_date)}
-                                </span>
-                                <span className="text-slate-500">
-                                  Due {formatDisplayDate(inv.due_date)}
-                                </span>
-                                <StatusBadge status={status} />
-                              </div>
-                              <div className="flex gap-4 text-sm tabular-nums">
-                                <span className="text-slate-500">
-                                  Amount {formatPaise(inv.amount_paise)}
-                                </span>
-                                <span className="text-slate-500">
-                                  GST {formatPaise(inv.gst_amount_paise)}
-                                </span>
-                                <span className="font-medium text-gray-900">
-                                  Total {formatPaise(inv.total_paise)}
-                                </span>
-                                <span className="font-medium text-gray-900">
-                                  Balance{" "}
-                                  {formatPaise(balance?.balance_paise ?? inv.total_paise)}
-                                </span>
-                                {canEdit &&
-                                  status !== "cleared" &&
-                                  status !== "cancelled" && (
-                                    <RecordPaymentButton
-                                      invoiceId={inv.id}
-                                      invoiceNumber={inv.invoice_number}
-                                      balancePaise={balance?.balance_paise ?? inv.total_paise}
-                                      siteId={id}
-                                    />
-                                  )}
-                                {canEdit && (
-                                  <EditInvoiceButton
-                                    invoiceId={inv.id}
-                                    invoiceNumber={inv.invoice_number}
-                                    currentStatus={inv.status}
-                                    issueDate={inv.issue_date}
-                                    dueDate={inv.due_date}
-                                    siteId={id}
-                                  />
-                                )}
-                              </div>
-                            </div>
-
-                            {invPayments.length > 0 && (
-                              <table className="mt-2 w-full text-sm">
-                                <thead className="text-xs font-medium uppercase tracking-wide text-gray-500">
-                                  <tr>
-                                    <th className="py-1 text-left font-medium">Received</th>
-                                    <th className="py-1 text-left font-medium">Mode</th>
-                                    <th className="py-1 text-left font-medium">Reference</th>
-                                    <th className="py-1 text-right font-medium">Amount</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  {invPayments.map((p) => (
-                                    <tr key={p.id}>
-                                      <td className="py-1 text-slate-700">{formatDisplayDate(p.received_date)}</td>
-                                      <td className="py-1 text-slate-700">{p.mode || "—"}</td>
-                                      <td className="py-1 text-slate-700">
-                                        {p.reference || "—"}
-                                      </td>
-                                      <td className="py-1 text-right tabular-nums text-gray-900">
-                                        {formatPaise(p.amount_paise)}
-                                      </td>
-                                    </tr>
-                                  ))}
-                                </tbody>
-                              </table>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  )}
-                  </div>
+                      ) : null
+                    }
+                  />
 
                   <RenewalsForPo
                     renewals={renewalsByPo.get(po.id) ?? []}
