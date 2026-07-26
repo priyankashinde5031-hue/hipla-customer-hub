@@ -5,13 +5,22 @@ import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
 import { formatPaise } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
+import { buildSchedule, type PaymentTermSpec } from "@/lib/invoicing";
 import { deviationPercent, RENEWAL_LOGIC } from "@/lib/renewals";
 import {
   updateRenewal,
   markRenewalDone,
-  regenerateRenewalInvoices,
+  generateRenewalInvoices,
   uploadRenewalAttachment,
 } from "./renewal-actions";
 
@@ -24,6 +33,7 @@ export type PaymentTermOption = {
   invoices_per_year: number | null;
   timing: "advance" | "arrears";
   billing_schedule_days: number | null;
+  installments: { label: string; percent: number }[];
 };
 
 // Renewal PO type option from the Settings renewal_po_types catalog.
@@ -55,6 +65,9 @@ export type RenewalCardData = {
   status: "upcoming" | "renewed";
   attachment: { filename: string; url: string | null } | null;
   breakdown: RenewalBreakdownLine[]; // per-line calculation from the origin PO
+  termMonths: number; // this cycle's length (for the invoice schedule)
+  gstPercent: number | null; // origin PO's GST %, for previewing invoice GST
+  activeInvoiceCount: number; // live (non-cancelled) invoices already generated
 };
 
 // Shared field styling so every control in the card — <Input>, native <select>,
@@ -139,7 +152,7 @@ function RenewalCard({
   const [isSaving, startSave] = useTransition();
   const [isUploading, startUpload] = useTransition();
   const [isEditing, setIsEditing] = useState(false);
-  const [confirmingRegen, setConfirmingRegen] = useState(false);
+  const [showGenerate, setShowGenerate] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const isDone = renewal.status === "renewed";
@@ -237,37 +250,8 @@ function RenewalCard({
         toast.error(result.error);
         return;
       }
-      const n = result.invoicesCreated ?? 0;
       toast.success(
-        n > 0
-          ? `Year ${renewal.yearNumber} renewed — ${n} invoice${n === 1 ? "" : "s"} generated.`
-          : `Year ${renewal.yearNumber} marked as renewed.`,
-      );
-    });
-  }
-
-  function regenerate() {
-    startSave(async () => {
-      // Persist any unsaved term change first, so we regenerate from what's shown.
-      const saved = await updateRenewal(renewal.id, siteId, fieldInput());
-      if (saved.error) {
-        setConfirmingRegen(false);
-        toast.error(saved.error);
-        return;
-      }
-      const result = await regenerateRenewalInvoices(renewal.id, siteId);
-      setConfirmingRegen(false);
-      if (result.error) {
-        toast.error(result.error);
-        return;
-      }
-      setIsEditing(false);
-      const created = result.created ?? 0;
-      const cancelled = result.cancelled ?? 0;
-      toast.success(
-        `Year ${renewal.yearNumber} rebuilt — ${created} invoice${created === 1 ? "" : "s"} created${
-          cancelled > 0 ? `, ${cancelled} old ${cancelled === 1 ? "one" : "ones"} cancelled` : ""
-        }.`,
+        `Year ${renewal.yearNumber} marked as renewed. Now generate its invoices.`,
       );
     });
   }
@@ -606,45 +590,190 @@ function RenewalCard({
                 Edit
               </Button>
             )}
-            {confirmingRegen ? (
-              <span className="flex flex-wrap items-center gap-2">
-                <span className="text-xs text-slate-500">
-                  Rebuild invoices from the current payment term? Unpaid invoices
-                  are cancelled and replaced; paid ones are left untouched.
-                </span>
-                <Button
-                  type="button"
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setConfirmingRegen(false)}
-                  disabled={isSaving}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  type="button"
-                  size="sm"
-                  onClick={regenerate}
-                  disabled={isSaving}
-                  className="bg-indigo-600 text-white hover:bg-indigo-700"
-                >
-                  {isSaving ? "Rebuilding…" : "Yes, regenerate"}
-                </Button>
-              </span>
-            ) : (
-              <button
-                type="button"
-                onClick={() => setConfirmingRegen(true)}
-                disabled={isSaving}
-                className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-50"
-              >
-                Regenerate invoices
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setShowGenerate(true)}
+              disabled={isSaving}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+            >
+              {renewal.activeInvoiceCount > 0
+                ? "Regenerate invoices"
+                : "Generate invoices"}
+            </button>
           </div>
+        )}
+
+        {showGenerate && (
+          <GenerateRenewalInvoicesDialog
+            renewal={renewal}
+            siteId={siteId}
+            term={paymentTermsOptions.find((t) => t.id === termId)}
+            onClose={() => setShowGenerate(false)}
+          />
         )}
       </div>
     </details>
+  );
+}
+
+// Preview-then-generate dialog for a renewal year's invoices. Mirrors the PO's
+// GenerateDialog: shows the schedule that WILL be created (periods spaced from
+// the renewal DATE, due dates + billing days, amounts split from the renewal
+// value), and only on "Generate" does it create them. When invoices already
+// exist it regenerates — cancelling the unpaid ones (server refuses if any are
+// paid). The schedule preview here uses the same buildSchedule + anchor as the
+// server, so what you see is what gets created.
+function GenerateRenewalInvoicesDialog({
+  renewal,
+  siteId,
+  term,
+  onClose,
+}: {
+  renewal: RenewalCardData;
+  siteId: string;
+  term: PaymentTermOption | undefined;
+  onClose: () => void;
+}) {
+  const [isPending, startTransition] = useTransition();
+  const anchor = renewal.renewalDate; // renewal date drives the schedule
+  const total = renewal.renewalValuePaise ?? 0;
+
+  const spec: PaymentTermSpec | null = term
+    ? {
+        scheduleType: term.schedule_type,
+        invoicesPerYear: term.invoices_per_year,
+        timing: term.timing,
+        billingScheduleDays: term.billing_schedule_days,
+        installments: term.installments,
+      }
+    : null;
+
+  const rows = spec
+    ? buildSchedule({
+        totalPaise: total,
+        term: spec,
+        contractMonths: renewal.termMonths,
+        startDate: spec.scheduleType === "periodic" ? anchor : null,
+      })
+    : [];
+
+  const gstOf = (amountPaise: number) => {
+    const pct = renewal.gstPercent ?? 0;
+    return pct > 0 ? Math.round((amountPaise * pct) / 100) : 0;
+  };
+
+  const blocked =
+    !term || total <= 0
+      ? "Add a payment term and renewal value on this card first."
+      : spec?.scheduleType === "periodic" && !anchor
+        ? "Set a renewal date (or go-live) before generating — the periods are spaced from it."
+        : null;
+
+  const isRegen = renewal.activeInvoiceCount > 0;
+
+  function generate() {
+    startTransition(async () => {
+      const result = await generateRenewalInvoices(renewal.id, siteId, anchor);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      const created = result.created ?? 0;
+      const cancelled = result.cancelled ?? 0;
+      toast.success(
+        `Year ${renewal.yearNumber}: ${created} invoice${created === 1 ? "" : "s"} generated${
+          cancelled > 0 ? `, ${cancelled} old ${cancelled === 1 ? "one" : "ones"} cancelled` : ""
+        }.`,
+      );
+      onClose();
+    });
+  }
+
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent className="max-w-2xl">
+        <DialogHeader>
+          <DialogTitle>
+            {isRegen ? "Regenerate" : "Generate"} invoices — Year {renewal.yearNumber}
+          </DialogTitle>
+          <DialogDescription>
+            {term?.schedule_type === "milestone"
+              ? "Milestone invoices are created with blank dates for you to fill in."
+              : anchor
+                ? `Periods and due dates are spaced from the renewal date (${formatDate(anchor)}).`
+                : "Set a renewal date to space the invoice periods."}
+            {isRegen && (
+              <>
+                {" "}
+                This replaces the {renewal.activeInvoiceCount} existing unpaid
+                invoice{renewal.activeInvoiceCount === 1 ? "" : "s"} (paid ones are
+                kept; the action refuses if any is already paid).
+              </>
+            )}
+          </DialogDescription>
+        </DialogHeader>
+
+        {blocked ? (
+          <p className="py-4 text-sm text-amber-700">{blocked}</p>
+        ) : (
+          <div className="max-h-80 overflow-y-auto rounded-lg border border-slate-200">
+            <table className="w-full text-sm">
+              <thead className="sticky top-0 bg-slate-50 text-xs font-medium uppercase tracking-wide text-gray-500">
+                <tr>
+                  <th className="px-3 py-2 text-left font-medium">Invoice</th>
+                  <th className="px-3 py-2 text-left font-medium">Issue</th>
+                  <th className="px-3 py-2 text-left font-medium">Due</th>
+                  <th className="px-3 py-2 text-right font-medium">Amount</th>
+                  <th className="px-3 py-2 text-right font-medium">GST</th>
+                  <th className="px-3 py-2 text-right font-medium">Total</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {rows.map((r, i) => {
+                  const gst = gstOf(r.amountPaise);
+                  return (
+                    <tr key={i}>
+                      <td className="px-3 py-1.5 text-slate-700">{r.label}</td>
+                      <td className="px-3 py-1.5 tabular-nums text-slate-600">
+                        {r.issueDate ? formatDate(r.issueDate) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 tabular-nums text-slate-600">
+                        {r.dueDate ? formatDate(r.dueDate) : "—"}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-700">
+                        {formatPaise(r.amountPaise)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums text-slate-600">
+                        {formatPaise(gst)}
+                      </td>
+                      <td className="px-3 py-1.5 text-right tabular-nums font-medium text-gray-900">
+                        {formatPaise(r.amountPaise + gst)}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        <DialogFooter>
+          <Button type="button" variant="outline" onClick={onClose} disabled={isPending}>
+            Cancel
+          </Button>
+          <Button
+            type="button"
+            onClick={generate}
+            disabled={isPending || !!blocked || rows.length === 0}
+            className="bg-indigo-600 text-white hover:bg-indigo-700"
+          >
+            {isPending
+              ? "Generating…"
+              : `${isRegen ? "Regenerate" : "Generate"} ${rows.length} invoice${rows.length === 1 ? "" : "s"}`}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
