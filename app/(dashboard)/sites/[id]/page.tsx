@@ -547,6 +547,17 @@ export default async function SitePage({
         .order("year_number")
     : { data: [] };
 
+  // "Raised" date shown on each invoice = the date the order/renewal was
+  // received (a real business date), distinct from the period/issue date. For a
+  // renewal invoice it's that renewal's received date; for an original-PO
+  // invoice it's the PO's received date. Derived, not stored.
+  const renewalReceivedById = new Map<string, string | null>(
+    (renewalRows ?? []).map((r) => [r.id, r.renewal_received_date ?? null]),
+  );
+  const poReceivedById = new Map<string, string | null>(
+    purchaseOrders.map((po) => [po.id, po.po_received_date ?? null]),
+  );
+
   // Per-PO renewal lines (base amount + the term's logic/rates), so each card
   // can show a line-by-line breakdown built with the SAME math the projection
   // used. Keyed by po_id; each entry keeps the display metadata alongside the
@@ -1139,6 +1150,9 @@ export default async function SitePage({
                         due_date: inv.due_date,
                         renewal_id: inv.renewal_id,
                         yearNumber: rnw?.year_number ?? null,
+                        raisedDate: inv.renewal_id
+                          ? renewalReceivedById.get(inv.renewal_id) ?? null
+                          : poReceivedById.get(inv.po_id) ?? null,
                         computedStatus: balance?.computed_status || inv.status,
                         balance_paise: balance?.balance_paise ?? inv.total_paise,
                         payments: (paymentsByInvoice.get(inv.id) || []).map((p) => ({

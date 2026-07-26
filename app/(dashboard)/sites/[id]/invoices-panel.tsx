@@ -54,6 +54,8 @@ export type PanelInvoice = {
   renewal_id: string | null;
   /** Renewal year this invoice belongs to (2..5); null for original-PO invoices. */
   yearNumber: number | null;
+  /** "Raised" date = the renewal/PO received date; distinct from the period date. */
+  raisedDate: string | null;
   /** Derived status from invoice_balances (overdue/due/cleared/…). */
   computedStatus: string;
   balance_paise: number;
@@ -95,8 +97,13 @@ function InvoiceRow({
               {yearLabel}
             </span>
           )}
+          {inv.raisedDate && (
+            <span className="text-slate-500">
+              Raised {formatDisplayDate(inv.raisedDate)}
+            </span>
+          )}
           <span className="text-slate-500">
-            Issued {formatDisplayDate(inv.issue_date)}
+            Period {formatDisplayDate(inv.issue_date)}
           </span>
           <span className="text-slate-500">
             Due {formatDisplayDate(inv.due_date)}
