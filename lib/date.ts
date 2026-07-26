@@ -12,6 +12,15 @@ export function formatDate(iso: string | null | undefined): string {
   return `${Number(m[3])} ${MONTH_ABBR[Number(m[2]) - 1]} ${m[1]}`;
 }
 
+// Today's local date as YYYY-MM-DD, for seeding date inputs. Uses the browser's
+// local calendar day (IST for our users) rather than UTC, so a value entered
+// late in the evening doesn't jump to the next day.
+export function todayISO(): string {
+  const d = new Date();
+  const local = new Date(d.getTime() - d.getTimezoneOffset() * 60000);
+  return local.toISOString().slice(0, 10);
+}
+
 // "Jan 2027" — month + year only, for renewal context lines.
 export function formatMonthYear(iso: string | null | undefined): string {
   if (!iso) return "—";

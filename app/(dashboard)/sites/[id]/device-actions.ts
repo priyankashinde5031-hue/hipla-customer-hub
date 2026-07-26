@@ -159,6 +159,7 @@ export type ReplaceDeviceInput = {
   esperId: string;
   nameOnEsper: string;
   approvedBy: string;
+  replacedAt: string | null; // yyyy-mm-dd; null → server uses now()
   notes: string | null;
 };
 
@@ -212,6 +213,7 @@ export async function replaceDevice(
     p_name_on_esper: nameOnEsper,
     p_approved_by: input.approvedBy,
     p_notes: input.notes?.trim() || null,
+    p_replaced_at: input.replacedAt || null,
   });
   if (error) return mapReplaceError(error.message);
 

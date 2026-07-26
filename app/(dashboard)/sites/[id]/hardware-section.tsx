@@ -15,7 +15,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { addDevice, deleteDevice, replaceDevice } from "./device-actions";
-import { formatDate } from "@/lib/date";
+import { formatDate, todayISO } from "@/lib/date";
 
 export type ActiveDevice = {
   id: string;
@@ -37,8 +37,11 @@ export type ReplacementRow = {
 
 type Option = { id: string; name: string };
 
+// w-full + min-w-0 keep the select pinned to its container: a native <select>
+// otherwise grows to fit its widest <option>, and long device labels (e.g.
+// "Hipla Meeting LED Schedulers – ERR-… – Waaree …") blow the dialog wide.
 const selectClass =
-  "h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-9 w-full min-w-0 truncate rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 export function HardwareSection({
   siteId,
@@ -425,6 +428,7 @@ function ReplaceDeviceDialog({
     esperId: "",
     nameOnEsper: "",
     approvedBy: "",
+    replacedAt: todayISO(),
     notes: "",
   });
   const [fieldError, setFieldError] = useState<string | null>(null);
@@ -435,7 +439,14 @@ function ReplaceDeviceDialog({
   if (targetKey !== lastTargetKey) {
     setLastTargetKey(targetKey);
     setOldDeviceId(presetOldId);
-    setForm({ hardwareCatalogId: "", esperId: "", nameOnEsper: "", approvedBy: "", notes: "" });
+    setForm({
+      hardwareCatalogId: "",
+      esperId: "",
+      nameOnEsper: "",
+      approvedBy: "",
+      replacedAt: todayISO(),
+      notes: "",
+    });
     setFieldError(null);
   }
 
@@ -448,6 +459,7 @@ function ReplaceDeviceDialog({
       return;
     }
     if (!form.nameOnEsper.trim()) return toast.error("Enter the name on Esper.");
+    if (!form.replacedAt) return toast.error("Choose the replacement date.");
     if (!form.approvedBy) return toast.error("Choose an approver.");
 
     startTransition(async () => {
@@ -457,6 +469,7 @@ function ReplaceDeviceDialog({
         esperId: form.esperId,
         nameOnEsper: form.nameOnEsper,
         approvedBy: form.approvedBy,
+        replacedAt: form.replacedAt || null,
         notes: form.notes || null,
       });
       if (res.error) {
@@ -551,6 +564,20 @@ function ReplaceDeviceDialog({
                 />
               </div>
             </div>
+          </div>
+
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="rep-date">
+              Replacement date <span className="text-red-500">*</span>
+            </Label>
+            <Input
+              id="rep-date"
+              type="date"
+              value={form.replacedAt}
+              max={todayISO()}
+              onChange={(e) => setForm((f) => ({ ...f, replacedAt: e.target.value }))}
+            />
+            <p className="text-xs text-slate-400">Defaults to today. Change it if the swap happened earlier.</p>
           </div>
 
           <div className="flex flex-col gap-1.5">
