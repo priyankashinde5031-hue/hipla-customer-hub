@@ -14,7 +14,7 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { buildSchedule, type PaymentTermSpec } from "@/lib/invoicing";
-import { createInvoices, createSingleInvoice } from "./invoice-actions";
+import { createInvoices, createSingleInvoice, regeneratePoInvoices } from "./invoice-actions";
 
 const inputClass =
   "h-8 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
@@ -471,8 +471,38 @@ function SingleInvoiceDialog({
   );
 }
 
-export function InvoiceActionsForPo({ ctx, siteId }: { ctx: PoInvoiceContext; siteId: string }) {
+export function InvoiceActionsForPo({
+  ctx,
+  siteId,
+  canRegenerate = false,
+}: {
+  ctx: PoInvoiceContext;
+  siteId: string;
+  /** True when this PO has live original-PO (non-renewal) invoices to rebuild. */
+  canRegenerate?: boolean;
+}) {
   const [open, setOpen] = useState<null | "generate" | "single">(null);
+  const [confirmingRegen, setConfirmingRegen] = useState(false);
+  const [isRegen, startRegen] = useTransition();
+
+  function regenerate() {
+    startRegen(async () => {
+      const result = await regeneratePoInvoices(ctx.poId, siteId);
+      setConfirmingRegen(false);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      const created = result.created ?? 0;
+      const cancelled = result.cancelled ?? 0;
+      toast.success(
+        `Invoices rebuilt — ${created} created${
+          cancelled > 0 ? `, ${cancelled} old ${cancelled === 1 ? "one" : "ones"} cancelled` : ""
+        }.`,
+      );
+    });
+  }
+
   return (
     <>
       <button
@@ -495,6 +525,45 @@ export function InvoiceActionsForPo({ ctx, siteId }: { ctx: PoInvoiceContext; si
       >
         Add single
       </button>
+      {canRegenerate &&
+        (confirmingRegen ? (
+          <span className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                setConfirmingRegen(false);
+              }}
+              disabled={isRegen}
+              className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              onClick={(e) => {
+                e.preventDefault();
+                regenerate();
+              }}
+              disabled={isRegen}
+              className="text-xs font-medium text-indigo-600 hover:text-indigo-700 disabled:opacity-50"
+            >
+              {isRegen ? "Rebuilding…" : "Confirm rebuild?"}
+            </button>
+          </span>
+        ) : (
+          <button
+            type="button"
+            onClick={(e) => {
+              e.preventDefault();
+              setConfirmingRegen(true);
+            }}
+            className="text-xs font-medium text-slate-500 hover:text-slate-700"
+            title="Rebuild this PO's invoices from its current payment term. Unpaid invoices are cancelled and replaced; paid ones are untouched."
+          >
+            Regenerate
+          </button>
+        ))}
       {open === "generate" && (
         <GenerateDialog ctx={ctx} siteId={siteId} onClose={() => setOpen(null)} />
       )}

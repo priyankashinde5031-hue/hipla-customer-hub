@@ -11,6 +11,7 @@ import { deviationPercent, RENEWAL_LOGIC } from "@/lib/renewals";
 import {
   updateRenewal,
   markRenewalDone,
+  regenerateRenewalInvoices,
   uploadRenewalAttachment,
 } from "./renewal-actions";
 
@@ -138,6 +139,7 @@ function RenewalCard({
   const [isSaving, startSave] = useTransition();
   const [isUploading, startUpload] = useTransition();
   const [isEditing, setIsEditing] = useState(false);
+  const [confirmingRegen, setConfirmingRegen] = useState(false);
   const fileRef = useRef<HTMLInputElement>(null);
 
   const isDone = renewal.status === "renewed";
@@ -240,6 +242,32 @@ function RenewalCard({
         n > 0
           ? `Year ${renewal.yearNumber} renewed — ${n} invoice${n === 1 ? "" : "s"} generated.`
           : `Year ${renewal.yearNumber} marked as renewed.`,
+      );
+    });
+  }
+
+  function regenerate() {
+    startSave(async () => {
+      // Persist any unsaved term change first, so we regenerate from what's shown.
+      const saved = await updateRenewal(renewal.id, siteId, fieldInput());
+      if (saved.error) {
+        setConfirmingRegen(false);
+        toast.error(saved.error);
+        return;
+      }
+      const result = await regenerateRenewalInvoices(renewal.id, siteId);
+      setConfirmingRegen(false);
+      if (result.error) {
+        toast.error(result.error);
+        return;
+      }
+      setIsEditing(false);
+      const created = result.created ?? 0;
+      const cancelled = result.cancelled ?? 0;
+      toast.success(
+        `Year ${renewal.yearNumber} rebuilt — ${created} invoice${created === 1 ? "" : "s"} created${
+          cancelled > 0 ? `, ${cancelled} old ${cancelled === 1 ? "one" : "ones"} cancelled` : ""
+        }.`,
       );
     });
   }
@@ -577,6 +605,41 @@ function RenewalCard({
               >
                 Edit
               </Button>
+            )}
+            {confirmingRegen ? (
+              <span className="flex flex-wrap items-center gap-2">
+                <span className="text-xs text-slate-500">
+                  Rebuild invoices from the current payment term? Unpaid invoices
+                  are cancelled and replaced; paid ones are left untouched.
+                </span>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setConfirmingRegen(false)}
+                  disabled={isSaving}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="button"
+                  size="sm"
+                  onClick={regenerate}
+                  disabled={isSaving}
+                  className="bg-indigo-600 text-white hover:bg-indigo-700"
+                >
+                  {isSaving ? "Rebuilding…" : "Yes, regenerate"}
+                </Button>
+              </span>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setConfirmingRegen(true)}
+                disabled={isSaving}
+                className="text-xs font-medium text-slate-500 hover:text-slate-700 disabled:opacity-50"
+              >
+                Regenerate invoices
+              </button>
             )}
           </div>
         )}

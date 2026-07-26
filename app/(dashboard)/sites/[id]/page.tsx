@@ -1128,7 +1128,13 @@ export default async function SitePage({
                     canEdit={canEdit}
                     headerAction={
                       canEdit ? (
-                        <InvoiceActionsForPo ctx={invoiceCtx} siteId={id} />
+                        <InvoiceActionsForPo
+                          ctx={invoiceCtx}
+                          siteId={id}
+                          canRegenerate={poInvoices.some(
+                            (inv) => !inv.renewal_id && inv.status !== "cancelled",
+                          )}
+                        />
                       ) : null
                     }
                   />
