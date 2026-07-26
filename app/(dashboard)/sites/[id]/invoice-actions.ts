@@ -423,7 +423,8 @@ export async function regeneratePoInvoices(
   }[];
   if (activeList.length === 0) {
     return {
-      error: "No original-PO invoices to regenerate for this site. Use Generate invoices instead.",
+      error:
+        "This PO has no original-PO invoices to rebuild for this site — its invoices belong to renewal years. Use “Regenerate invoices” on the renewal card instead.",
     };
   }
 

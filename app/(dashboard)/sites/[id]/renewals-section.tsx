@@ -251,15 +251,16 @@ function RenewalCard({
       // Persist any unsaved term change first, so we regenerate from what's shown.
       const saved = await updateRenewal(renewal.id, siteId, fieldInput());
       if (saved.error) {
+        setConfirmingRegen(false);
         toast.error(saved.error);
         return;
       }
       const result = await regenerateRenewalInvoices(renewal.id, siteId);
+      setConfirmingRegen(false);
       if (result.error) {
         toast.error(result.error);
         return;
       }
-      setConfirmingRegen(false);
       setIsEditing(false);
       const created = result.created ?? 0;
       const cancelled = result.cancelled ?? 0;
