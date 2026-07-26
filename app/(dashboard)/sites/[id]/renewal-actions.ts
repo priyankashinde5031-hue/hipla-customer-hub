@@ -28,29 +28,33 @@ function gstPaiseFor(amountPaise: number, gstPercent: number | null): number {
   return pct > 0 ? Math.round((amountPaise * pct) / 100) : 0;
 }
 
-// Auto-generate the invoices for a renewal year, splitting its renewal value by
-// the payment term chosen on the renewal card — the SAME buildSchedule logic the
-// PO's "Generate invoices" uses. No-op (returns 0) when there's no payment term,
-// no renewal value, or invoices were already generated for this renewal.
-async function generateRenewalInvoices(
+type RenewalInvoiceRow = {
+  po_id: string;
+  contract_id: string | null;
+  billed_site_id: string;
+  renewal_id: string;
+  amount_paise: number;
+  gst_amount_paise: number;
+  issue_date: string | null;
+  due_date: string | null;
+  status: string;
+};
+
+// Build (but don't insert) the invoice rows for a renewal year, splitting its
+// renewal value by the payment term chosen on the renewal card — the SAME
+// buildSchedule logic the PO's "Generate invoices" uses. Returns [] when there's
+// nothing to generate (no term, no value, or the term yields no schedule).
+async function buildRenewalInvoicePayload(
   supabase: Awaited<ReturnType<typeof createClient>>,
-  actorId: string,
   renewal: Record<string, unknown>,
-): Promise<number> {
+): Promise<RenewalInvoiceRow[]> {
   const paymentTermsId = renewal.payment_terms_id as string | null;
   const totalPaise = renewal.renewal_value_paise as number | null;
   const poId = renewal.po_id as string | null;
   const billedSiteId = renewal.anchor_site_id as string | null;
   if (!paymentTermsId || !totalPaise || totalPaise <= 0 || !poId || !billedSiteId) {
-    return 0;
+    return [];
   }
-
-  // Don't double-generate if this renewal already has invoices.
-  const { count: existing } = await supabase
-    .from("invoices")
-    .select("id", { count: "exact", head: true })
-    .eq("renewal_id", renewal.id as string);
-  if (existing && existing > 0) return 0;
 
   // Payment term → schedule spec (mirrors page.tsx's PO term mapping).
   const { data: term } = await supabase
@@ -60,7 +64,7 @@ async function generateRenewalInvoices(
     )
     .eq("id", paymentTermsId)
     .maybeSingle();
-  if (!term) return 0;
+  if (!term) return [];
 
   const spec: PaymentTermSpec = {
     scheduleType: term.schedule_type === "milestone" ? "milestone" : "periodic",
@@ -90,9 +94,9 @@ async function generateRenewalInvoices(
     startDate:
       spec.scheduleType === "periodic" ? (renewal.renewal_received_date as string | null) : null,
   });
-  if (generated.length === 0) return 0;
+  if (generated.length === 0) return [];
 
-  const payload = generated.map((g) => ({
+  return generated.map((g) => ({
     po_id: poId,
     contract_id: (po?.contract_id as string | null) ?? null,
     billed_site_id: billedSiteId,
@@ -103,6 +107,26 @@ async function generateRenewalInvoices(
     due_date: g.dueDate || null,
     status: "raised",
   }));
+}
+
+// Auto-generate the invoices for a renewal year. No-op (returns 0) when there's
+// nothing to generate, or when the renewal already has ACTIVE (non-cancelled)
+// invoices — the guard that stops "mark as done" double-generating.
+async function generateRenewalInvoices(
+  supabase: Awaited<ReturnType<typeof createClient>>,
+  actorId: string,
+  renewal: Record<string, unknown>,
+): Promise<number> {
+  // Cancelled invoices don't block generation — only live ones do.
+  const { count: existing } = await supabase
+    .from("invoices")
+    .select("id", { count: "exact", head: true })
+    .eq("renewal_id", renewal.id as string)
+    .neq("status", "cancelled");
+  if (existing && existing > 0) return 0;
+
+  const payload = await buildRenewalInvoicePayload(supabase, renewal);
+  if (payload.length === 0) return 0;
 
   const { data: inserted, error } = await supabase
     .from("invoices")
@@ -117,7 +141,7 @@ async function generateRenewalInvoices(
       entity_type: "invoice",
       entity_id: inv.id,
       before: null,
-      after: { ...inv, po_id: poId, renewal_id: renewal.id, billed_site_id: billedSiteId },
+      after: { ...inv, po_id: payload[0].po_id, renewal_id: renewal.id, billed_site_id: payload[0].billed_site_id },
     });
   }
   return inserted.length;
@@ -233,6 +257,112 @@ export async function markRenewalDone(
 
   revalidatePath(`/sites/${siteId}`);
   return { invoicesCreated };
+}
+
+// Rebuild a renewal year's invoices from its CURRENT payment term. Used when the
+// payment term was changed after invoices were first generated (e.g. Net 30 was
+// picked by mistake, then switched to Monthly) — a plain edit doesn't re-split.
+//
+// Safety: only ever removes UNPAID invoices, and never deletes — the old ones
+// are cancelled (kept for history, excluded from money totals). If any existing
+// invoice already has a payment, it refuses and names them so nothing paid is
+// touched. Fully audited.
+export async function regenerateRenewalInvoices(
+  renewalId: string,
+  siteId: string,
+): Promise<ActionResult & { cancelled?: number; created?: number }> {
+  const user = await getCurrentInternalUser();
+  if (!canEditCommercials(user)) {
+    return { error: "You don't have permission to regenerate invoices." };
+  }
+
+  const supabase = await createClient();
+  const before = await snapshot(supabase, renewalId);
+  if (!before) return { error: "Renewal not found." };
+
+  // Build the fresh schedule FIRST — if the current term yields nothing, refuse
+  // before touching anything, so we never cancel the old invoices for nothing.
+  const payload = await buildRenewalInvoicePayload(supabase, before);
+  if (payload.length === 0) {
+    return {
+      error:
+        "Add a payment term and renewal value before regenerating this year's invoices.",
+    };
+  }
+
+  // Existing live (non-cancelled) invoices for this renewal.
+  const { data: active } = await supabase
+    .from("invoices")
+    .select("id, invoice_number, status")
+    .eq("renewal_id", renewalId)
+    .neq("status", "cancelled");
+  const activeList = (active ?? []) as {
+    id: string;
+    invoice_number: string;
+    status: string;
+  }[];
+
+  // Refuse if any of them already has a payment — never disturb collected money.
+  if (activeList.length > 0) {
+    const ids = activeList.map((i) => i.id);
+    const { data: paid } = await supabase
+      .from("payments")
+      .select("invoice_id")
+      .in("invoice_id", ids);
+    const paidSet = new Set((paid ?? []).map((p) => p.invoice_id as string));
+    const paidNumbers = activeList
+      .filter((i) => paidSet.has(i.id))
+      .map((i) => i.invoice_number);
+    if (paidNumbers.length > 0) {
+      const one = paidNumbers.length === 1;
+      return {
+        error: `Can't regenerate — ${paidNumbers.join(", ")} already ${
+          one ? "has a payment" : "have payments"
+        } recorded. Handle ${one ? "it" : "them"} first, then try again.`,
+      };
+    }
+  }
+
+  // Cancel the old unpaid invoices (soft-delete, keep history). Cancel-first then
+  // insert: if the insert fails, re-running recovers cleanly (the cancelled ones
+  // no longer block, and a fresh set is created).
+  for (const inv of activeList) {
+    const { error: cancelErr } = await supabase
+      .from("invoices")
+      .update({ status: "cancelled" })
+      .eq("id", inv.id);
+    if (cancelErr) return { error: cancelErr.message };
+    await supabase.from("audit_log").insert({
+      actor_id: user!.id,
+      action: "update",
+      entity_type: "invoice",
+      entity_id: inv.id,
+      before: { status: inv.status },
+      after: { status: "cancelled", reason: "superseded by payment-term regenerate" },
+    });
+  }
+
+  // Insert the fresh schedule.
+  const { data: inserted, error } = await supabase
+    .from("invoices")
+    .insert(payload)
+    .select("id, invoice_number, amount_paise, gst_amount_paise, issue_date, due_date");
+  if (error || !inserted) {
+    return { error: error?.message ?? "Could not regenerate the invoices." };
+  }
+  for (const inv of inserted) {
+    await supabase.from("audit_log").insert({
+      actor_id: user!.id,
+      action: "create",
+      entity_type: "invoice",
+      entity_id: inv.id,
+      before: null,
+      after: { ...inv, po_id: payload[0].po_id, renewal_id: renewalId, billed_site_id: payload[0].billed_site_id },
+    });
+  }
+
+  revalidatePath(`/sites/${siteId}`);
+  return { cancelled: activeList.length, created: inserted.length };
 }
 
 // Upload a PO file for a specific renewal year. Bytes go to Supabase Storage;

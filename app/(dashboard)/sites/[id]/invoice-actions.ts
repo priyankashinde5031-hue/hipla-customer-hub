@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
+import { buildSchedule, type PaymentTermSpec } from "@/lib/invoicing";
 
 // Same rule as PO edits: admin or manager (spec uses it for commercial edits).
 const canEditCommercials = canEditCatalogs;
@@ -309,4 +310,166 @@ export async function recordPayment(
 
   revalidatePath(`/sites/${originSiteId}`);
   return { count: 1 };
+}
+
+function gstPaiseFor(amountPaise: number, gstPercent: number | null): number {
+  const pct = gstPercent ?? 0;
+  return pct > 0 ? Math.round((amountPaise * pct) / 100) : 0;
+}
+
+// Rebuild the ORIGINAL-PO invoices (the ones not tied to a renewal year) billed
+// to this site, from the PO's CURRENT payment term. The mirror of
+// regenerateRenewalInvoices, for when a PO's payment term was changed after its
+// invoices were first generated. Same safety: only cancels UNPAID invoices,
+// never deletes, refuses if any already has a payment. Fully audited.
+export async function regeneratePoInvoices(
+  poId: string,
+  siteId: string,
+): Promise<ActionResult & { cancelled?: number; created?: number }> {
+  const user = await getCurrentInternalUser();
+  if (!canEditCommercials(user)) {
+    return { error: "You don't have permission to regenerate invoices." };
+  }
+
+  const supabase = await createClient();
+
+  const { data: po } = await supabase
+    .from("purchase_orders")
+    .select(
+      "id, gst_percent, contract_id, po_received_date, payment_terms_id, contract_time:contract_times!contract_time_id ( months ), po_sites ( site_id )",
+    )
+    .eq("id", poId)
+    .maybeSingle();
+  if (!po) return { error: "Purchase order not found." };
+
+  const siteIds = ((po.po_sites as { site_id: string }[] | null) ?? []).map((s) => s.site_id);
+  if (!siteIds.includes(siteId)) {
+    return { error: "Invoices can only be billed to a site this PO covers." };
+  }
+
+  const paymentTermsId = po.payment_terms_id as string | null;
+  if (!paymentTermsId) {
+    return { error: "Set a payment term on the PO before regenerating its invoices." };
+  }
+
+  const { data: totals } = await supabase
+    .from("po_totals")
+    .select("po_value_paise")
+    .eq("po_id", poId)
+    .maybeSingle();
+  const totalPaise = (totals?.po_value_paise as number | null) ?? 0;
+  if (totalPaise <= 0) {
+    return { error: "This PO has no line-item value to invoice." };
+  }
+
+  const { data: term } = await supabase
+    .from("payment_terms")
+    .select(
+      "schedule_type, invoices_per_year, timing, billing_schedule_days, installments:payment_term_installments ( label, percent, sort_order )",
+    )
+    .eq("id", paymentTermsId)
+    .maybeSingle();
+  if (!term) return { error: "Payment term not found." };
+
+  const spec: PaymentTermSpec = {
+    scheduleType: term.schedule_type === "milestone" ? "milestone" : "periodic",
+    invoicesPerYear: term.invoices_per_year ?? null,
+    timing: term.timing === "arrears" ? "arrears" : "advance",
+    billingScheduleDays: term.billing_schedule_days ?? null,
+    installments: ((term.installments ?? []) as { label: string; percent: number | string; sort_order: number }[])
+      .slice()
+      .sort((a, b) => a.sort_order - b.sort_order)
+      .map((i) => ({ label: i.label, percent: Number(i.percent) })),
+  };
+
+  const contractTime = Array.isArray(po.contract_time) ? po.contract_time[0] : po.contract_time;
+  const generated = buildSchedule({
+    totalPaise,
+    term: spec,
+    contractMonths: (contractTime?.months as number | null) ?? 12,
+    startDate:
+      spec.scheduleType === "periodic" ? (po.po_received_date as string | null) : null,
+  });
+  if (generated.length === 0) {
+    return { error: "This payment term produces no invoice schedule." };
+  }
+
+  const gstPercent = (po.gst_percent as number | null) ?? null;
+  const payload = generated.map((g) => ({
+    po_id: poId,
+    contract_id: (po.contract_id as string | null) ?? null,
+    billed_site_id: siteId,
+    renewal_id: null,
+    amount_paise: g.amountPaise,
+    gst_amount_paise: gstPaiseFor(g.amountPaise, gstPercent),
+    issue_date: g.issueDate || null,
+    due_date: g.dueDate || null,
+    status: "raised",
+  }));
+
+  // Existing live original-PO invoices billed to this site (renewal invoices are
+  // handled on the renewal card, so they're excluded here).
+  const { data: active } = await supabase
+    .from("invoices")
+    .select("id, invoice_number, status")
+    .eq("po_id", poId)
+    .eq("billed_site_id", siteId)
+    .is("renewal_id", null)
+    .neq("status", "cancelled");
+  const activeList = (active ?? []) as {
+    id: string;
+    invoice_number: string;
+    status: string;
+  }[];
+  if (activeList.length === 0) {
+    return {
+      error: "No original-PO invoices to regenerate for this site. Use Generate invoices instead.",
+    };
+  }
+
+  const ids = activeList.map((i) => i.id);
+  const { data: paid } = await supabase
+    .from("payments")
+    .select("invoice_id")
+    .in("invoice_id", ids);
+  const paidSet = new Set((paid ?? []).map((p) => p.invoice_id as string));
+  const paidNumbers = activeList.filter((i) => paidSet.has(i.id)).map((i) => i.invoice_number);
+  if (paidNumbers.length > 0) {
+    const one = paidNumbers.length === 1;
+    return {
+      error: `Can't regenerate — ${paidNumbers.join(", ")} already ${
+        one ? "has a payment" : "have payments"
+      } recorded. Handle ${one ? "it" : "them"} first, then try again.`,
+    };
+  }
+
+  for (const inv of activeList) {
+    const { error: cancelErr } = await supabase
+      .from("invoices")
+      .update({ status: "cancelled" })
+      .eq("id", inv.id);
+    if (cancelErr) return { error: cancelErr.message };
+    await supabase.from("audit_log").insert({
+      actor_id: user!.id,
+      action: "update",
+      entity_type: "invoice",
+      entity_id: inv.id,
+      before: { status: inv.status },
+      after: { status: "cancelled", reason: "superseded by payment-term regenerate" },
+    });
+  }
+
+  const { data: inserted, error } = await supabase
+    .from("invoices")
+    .insert(payload)
+    .select("id, invoice_number, amount_paise, gst_amount_paise, issue_date, due_date");
+  if (error || !inserted) {
+    return { error: error?.message ?? "Could not regenerate the invoices." };
+  }
+  for (const inv of inserted) {
+    await writeAudit(supabase, user!.id, inv.id, { ...inv, po_id: poId, billed_site_id: siteId });
+  }
+
+  revalidatePath(`/sites/${siteId}`);
+  return { cancelled: activeList.length, created: inserted.length };
 }
