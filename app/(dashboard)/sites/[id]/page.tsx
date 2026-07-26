@@ -419,6 +419,21 @@ export default async function SitePage({
     0,
   );
 
+  // GST % per PO (for previewing renewal invoice GST) and the count of live
+  // (non-cancelled) invoices per renewal year (so the card knows whether the
+  // action is a first Generate or a Regenerate over existing ones).
+  const poGstById = new Map<string, number | null>(
+    purchaseOrders.map((po) => [po.id, po.gst_percent ?? null]),
+  );
+  const activeInvoiceCountByRenewal = new Map<string, number>();
+  for (const inv of invoices || []) {
+    if (!inv.renewal_id || inv.status === "cancelled") continue;
+    activeInvoiceCountByRenewal.set(
+      inv.renewal_id,
+      (activeInvoiceCountByRenewal.get(inv.renewal_id) ?? 0) + 1,
+    );
+  }
+
   const organization = Array.isArray(site.organization)
     ? site.organization[0]
     : site.organization;
@@ -457,7 +472,9 @@ export default async function SitePage({
     supabase.from("financial_years").select("id, name").eq("active", true).order("name"),
     supabase
       .from("payment_terms")
-      .select("id, name, schedule_type, invoices_per_year, timing, billing_schedule_days")
+      .select(
+        "id, name, schedule_type, invoices_per_year, timing, billing_schedule_days, installments:payment_term_installments ( label, percent, sort_order )",
+      )
       .eq("active", true)
       .order("name"),
     supabase.from("contract_times").select("id, name").eq("active", true).order("name"),
@@ -481,6 +498,12 @@ export default async function SitePage({
       invoices_per_year: t.invoices_per_year ?? null,
       timing: t.timing === "arrears" ? "arrears" : "advance",
       billing_schedule_days: t.billing_schedule_days ?? null,
+      installments: (
+        (t.installments ?? []) as { label: string; percent: number | string; sort_order: number }[]
+      )
+        .slice()
+        .sort((a, b) => a.sort_order - b.sort_order)
+        .map((i) => ({ label: i.label, percent: Number(i.percent) })),
     }),
   );
 
@@ -523,6 +546,17 @@ export default async function SitePage({
         .in("po_id", poIds)
         .order("year_number")
     : { data: [] };
+
+  // "Raised" date shown on each invoice = the date the order/renewal was
+  // received (a real business date), distinct from the period/issue date. For a
+  // renewal invoice it's that renewal's received date; for an original-PO
+  // invoice it's the PO's received date. Derived, not stored.
+  const renewalReceivedById = new Map<string, string | null>(
+    (renewalRows ?? []).map((r) => [r.id, r.renewal_received_date ?? null]),
+  );
+  const poReceivedById = new Map<string, string | null>(
+    purchaseOrders.map((po) => [po.id, po.po_received_date ?? null]),
+  );
 
   // Per-PO renewal lines (base amount + the term's logic/rates), so each card
   // can show a line-by-line breakdown built with the SAME math the projection
@@ -605,6 +639,9 @@ export default async function SitePage({
         status: r.status === "renewed" ? "renewed" : "upcoming",
         attachment: attached,
         breakdown,
+        termMonths: r.term_months ?? 12,
+        gstPercent: poGstById.get(r.po_id) ?? null,
+        activeInvoiceCount: activeInvoiceCountByRenewal.get(r.id) ?? 0,
       };
       const list = renewalsByPo.get(r.po_id) || [];
       list.push(card);
@@ -1113,6 +1150,9 @@ export default async function SitePage({
                         due_date: inv.due_date,
                         renewal_id: inv.renewal_id,
                         yearNumber: rnw?.year_number ?? null,
+                        raisedDate: inv.renewal_id
+                          ? renewalReceivedById.get(inv.renewal_id) ?? null
+                          : poReceivedById.get(inv.po_id) ?? null,
                         computedStatus: balance?.computed_status || inv.status,
                         balance_paise: balance?.balance_paise ?? inv.total_paise,
                         payments: (paymentsByInvoice.get(inv.id) || []).map((p) => ({

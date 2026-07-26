@@ -44,9 +44,16 @@ type RenewalInvoiceRow = {
 // renewal value by the payment term chosen on the renewal card — the SAME
 // buildSchedule logic the PO's "Generate invoices" uses. Returns [] when there's
 // nothing to generate (no term, no value, or the term yields no schedule).
+//
+// `anchorDate` = the renewal DATE (contract-year start), NOT the received date:
+// periodic invoice periods and due dates are spaced from when the term begins,
+// so a renewal marked done months late still bills the correct months. It's the
+// already-resolved date the card shows (override, else go-live + offset), passed
+// in so generation matches the previewed schedule exactly.
 async function buildRenewalInvoicePayload(
   supabase: Awaited<ReturnType<typeof createClient>>,
   renewal: Record<string, unknown>,
+  anchorDate: string | null,
 ): Promise<RenewalInvoiceRow[]> {
   const paymentTermsId = renewal.payment_terms_id as string | null;
   const totalPaise = renewal.renewal_value_paise as number | null;
@@ -89,10 +96,9 @@ async function buildRenewalInvoicePayload(
     totalPaise,
     term: spec,
     contractMonths: (renewal.term_months as number | null) ?? 12,
-    // Periodic invoices space from the renewal received date; milestone dates
-    // stay blank for the user to fill (same as the PO flow).
-    startDate:
-      spec.scheduleType === "periodic" ? (renewal.renewal_received_date as string | null) : null,
+    // Periodic invoices space from the RENEWAL DATE (contract-year start);
+    // milestone dates stay blank for the user to fill (same as the PO flow).
+    startDate: spec.scheduleType === "periodic" ? anchorDate : null,
   });
   if (generated.length === 0) return [];
 
@@ -107,44 +113,6 @@ async function buildRenewalInvoicePayload(
     due_date: g.dueDate || null,
     status: "raised",
   }));
-}
-
-// Auto-generate the invoices for a renewal year. No-op (returns 0) when there's
-// nothing to generate, or when the renewal already has ACTIVE (non-cancelled)
-// invoices — the guard that stops "mark as done" double-generating.
-async function generateRenewalInvoices(
-  supabase: Awaited<ReturnType<typeof createClient>>,
-  actorId: string,
-  renewal: Record<string, unknown>,
-): Promise<number> {
-  // Cancelled invoices don't block generation — only live ones do.
-  const { count: existing } = await supabase
-    .from("invoices")
-    .select("id", { count: "exact", head: true })
-    .eq("renewal_id", renewal.id as string)
-    .neq("status", "cancelled");
-  if (existing && existing > 0) return 0;
-
-  const payload = await buildRenewalInvoicePayload(supabase, renewal);
-  if (payload.length === 0) return 0;
-
-  const { data: inserted, error } = await supabase
-    .from("invoices")
-    .insert(payload)
-    .select("id, invoice_number, amount_paise, gst_amount_paise, issue_date, due_date");
-  if (error || !inserted) return 0;
-
-  for (const inv of inserted) {
-    await supabase.from("audit_log").insert({
-      actor_id: actorId,
-      action: "create",
-      entity_type: "invoice",
-      entity_id: inv.id,
-      before: null,
-      after: { ...inv, po_id: payload[0].po_id, renewal_id: renewal.id, billed_site_id: payload[0].billed_site_id },
-    });
-  }
-  return inserted.length;
 }
 
 function rupeesToPaise(rupees: number | null): number | null {
@@ -222,12 +190,13 @@ export async function updateRenewal(
 }
 
 // Mark a renewal complete. Requires both a renewal value and a received date.
-// On completion, auto-generates the year's invoices from the renewal's payment
-// term (same split logic as the PO's "Generate invoices").
+// This ONLY flips the status — invoices are no longer auto-generated here; the
+// user reviews the previewed schedule and generates them explicitly from the
+// renewal card (see generateRenewalInvoices).
 export async function markRenewalDone(
   renewalId: string,
   siteId: string,
-): Promise<ActionResult & { invoicesCreated?: number }> {
+): Promise<ActionResult> {
   const user = await getCurrentInternalUser();
   if (!canEditCommercials(user)) {
     return { error: "You don't have permission to edit renewals." };
@@ -252,24 +221,24 @@ export async function markRenewalDone(
 
   await writeAudit(supabase, user!.id, "update", renewalId, before, { status: "renewed" });
 
-  // Split this year's renewal value into invoices by its payment term.
-  const invoicesCreated = await generateRenewalInvoices(supabase, user!.id, before);
-
   revalidatePath(`/sites/${siteId}`);
-  return { invoicesCreated };
+  return {};
 }
 
-// Rebuild a renewal year's invoices from its CURRENT payment term. Used when the
-// payment term was changed after invoices were first generated (e.g. Net 30 was
-// picked by mistake, then switched to Monthly) — a plain edit doesn't re-split.
+// Generate (or regenerate) a renewal year's invoices from its CURRENT payment
+// term, spacing periods/due dates from `anchorDate` (the renewal DATE, passed in
+// so it matches the schedule previewed on the card). Handles both the first
+// generation and a later rebuild after a term change — on a rebuild it replaces
+// the existing UNPAID invoices.
 //
 // Safety: only ever removes UNPAID invoices, and never deletes — the old ones
 // are cancelled (kept for history, excluded from money totals). If any existing
 // invoice already has a payment, it refuses and names them so nothing paid is
 // touched. Fully audited.
-export async function regenerateRenewalInvoices(
+export async function generateRenewalInvoices(
   renewalId: string,
   siteId: string,
+  anchorDate: string | null,
 ): Promise<ActionResult & { cancelled?: number; created?: number }> {
   const user = await getCurrentInternalUser();
   if (!canEditCommercials(user)) {
@@ -282,11 +251,11 @@ export async function regenerateRenewalInvoices(
 
   // Build the fresh schedule FIRST — if the current term yields nothing, refuse
   // before touching anything, so we never cancel the old invoices for nothing.
-  const payload = await buildRenewalInvoicePayload(supabase, before);
+  const payload = await buildRenewalInvoicePayload(supabase, before, anchorDate);
   if (payload.length === 0) {
     return {
       error:
-        "Add a payment term and renewal value before regenerating this year's invoices.",
+        "Add a payment term and renewal value before generating this year's invoices.",
     };
   }
 
