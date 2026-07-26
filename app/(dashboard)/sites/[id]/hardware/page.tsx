@@ -89,7 +89,8 @@ export default async function SiteHardwarePage({
       oldHardwareName: oldDevice ? hardwareName(oldDevice) : "—",
       oldEsperId: oldDevice?.esper_id ?? "—",
       newEsperId: newDevice?.esper_id ?? "—",
-      replacedAt: r.replaced_at,
+      // replaced_at is a timestamptz; the table shows the calendar day only.
+      replacedAt: typeof r.replaced_at === "string" ? r.replaced_at.slice(0, 10) : r.replaced_at,
       approverName: approver?.name ?? "—",
       notes: r.notes ?? null,
     };
