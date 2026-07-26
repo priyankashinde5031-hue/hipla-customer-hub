@@ -37,8 +37,11 @@ export type ReplacementRow = {
 
 type Option = { id: string; name: string };
 
+// w-full + min-w-0 keep the select pinned to its container: a native <select>
+// otherwise grows to fit its widest <option>, and long device labels (e.g.
+// "Hipla Meeting LED Schedulers – ERR-… – Waaree …") blow the dialog wide.
 const selectClass =
-  "h-9 rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
+  "h-9 w-full min-w-0 truncate rounded-lg border border-input bg-transparent px-2.5 text-sm outline-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50";
 
 export function HardwareSection({
   siteId,
