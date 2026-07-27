@@ -289,7 +289,7 @@ export async function getDashboardData(
     modulesRes,
   ] = await Promise.all([
     supabase.from("organizations").select("id, brand_name, legal_name"),
-    supabase.from("sites").select("id, name, organization_id, go_live_date"),
+    supabase.from("sites").select("id, name, organization_id"),
     supabase.from("po_sites").select("po_id, site_id"),
     supabase.from("po_modules").select("po_id, module_id"),
     supabase
@@ -327,9 +327,9 @@ export async function getDashboardData(
   const moduleName = new Map<string, string>();
   for (const m of modulesRes.data ?? []) moduleName.set(m.id, m.name);
 
-  const site = new Map<string, { name: string; orgId: string; goLive: string | null }>();
+  const site = new Map<string, { name: string; orgId: string }>();
   for (const s of sitesRes.data ?? []) {
-    site.set(s.id, { name: s.name, orgId: s.organization_id, goLive: s.go_live_date });
+    site.set(s.id, { name: s.name, orgId: s.organization_id });
   }
 
   // POs that cover the filtered module (product-line filter). Null = no filter.
@@ -348,8 +348,8 @@ export async function getDashboardData(
     return poHasModule.get(poId)?.has(filter.moduleId) ?? false;
   };
 
-  // Per-PO go-live anchor: the linked project's Stage-4 go-live, else the
-  // earliest go-live among covered sites (mirrors org-list-metrics.ts).
+  // Per-PO go-live anchor: the linked project's Stage-4 go-live. Go-live lives
+  // only in Implementation now — there is no site-banner fallback.
   const poGoLive = new Map<string, string>();
   const poFirstSite = new Map<string, string>(); // for row links when no anchor site
   for (const p of projectsRes.data ?? []) {
@@ -363,10 +363,6 @@ export async function getDashboardData(
   }
   for (const link of poSitesRes.data ?? []) {
     if (!poFirstSite.has(link.po_id)) poFirstSite.set(link.po_id, link.site_id);
-    const gl = site.get(link.site_id)?.goLive;
-    if (!gl) continue;
-    const existing = poGoLive.get(link.po_id);
-    if (!existing || gl < existing) poGoLive.set(link.po_id, gl);
   }
 
   const matchesCustomer = (orgId: string | null | undefined): boolean =>
@@ -386,7 +382,7 @@ export async function getDashboardData(
     if (!matchesCustomer(r.organization_id)) continue;
     if (!poMatchesModule(r.po_id)) continue;
 
-    const anchor = poGoLive.get(r.po_id) ?? site.get(r.anchor_site_id ?? "")?.goLive ?? null;
+    const anchor = poGoLive.get(r.po_id) ?? null;
     const effective = r.renewal_date_override ?? renewalDate(anchor, r.offset_months);
     if (!effective) continue;
 

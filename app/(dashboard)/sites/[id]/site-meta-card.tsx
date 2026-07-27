@@ -20,7 +20,6 @@ export function SiteMetaCard({
   regionDisplay,
   timezoneDisplay,
   gstDisplay,
-  goLiveDisplay,
   onboardingOwnerDisplay,
   csOwnerDisplay,
   initial,
@@ -32,7 +31,6 @@ export function SiteMetaCard({
   regionDisplay: string;
   timezoneDisplay: string;
   gstDisplay: string;
-  goLiveDisplay: string;
   onboardingOwnerDisplay: string;
   csOwnerDisplay: string;
   initial: SiteInitial;
@@ -43,7 +41,6 @@ export function SiteMetaCard({
     { label: "Region", display: regionDisplay, empty: !regionDisplay },
     { label: "Timezone", display: timezoneDisplay, empty: !timezoneDisplay },
     { label: "GST number", display: gstDisplay, empty: !gstDisplay },
-    { label: "Go-live date", display: goLiveDisplay, empty: !goLiveDisplay },
     {
       label: "Onboarding owner",
       display: onboardingOwnerDisplay,

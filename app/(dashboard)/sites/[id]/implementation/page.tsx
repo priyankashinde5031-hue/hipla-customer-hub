@@ -23,7 +23,7 @@ export default async function SiteImplementationPage({
     supabase
       .from("sites")
       .select(
-        `id, name, is_hq, status, go_live_date,
+        `id, name, is_hq, status,
          organization:organizations ( id, legal_name, brand_name )`,
       )
       .eq("id", id)

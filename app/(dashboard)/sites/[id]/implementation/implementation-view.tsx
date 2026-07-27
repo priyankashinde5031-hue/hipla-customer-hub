@@ -189,7 +189,7 @@ export function ImplementationView({
                 className={`${inputClass} max-w-xs`}
                 title="Link this project to its Purchase Order"
               >
-                <option value="">Link a PO (optional)</option>
+                <option value="">Link a PO (needed before go-live)</option>
                 {pos.map((po) => (
                   <option key={po.id} value={po.id}>
                     {po.label}
@@ -287,6 +287,10 @@ function BackfillForm({
       toast.error("Enter the go-live date.");
       return;
     }
+    if (!poId) {
+      toast.error("Select the PO this go-live belongs to.");
+      return;
+    }
     const fd = new FormData();
     fd.set("siteId", siteId);
     fd.set("projectName", name.trim());
@@ -322,14 +326,14 @@ function BackfillForm({
       <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
         <div className="sm:col-span-2">
           <label className="mb-1 block text-xs font-medium text-slate-600">
-            Which PO / order
+            Which PO / order <span className="text-red-500">*</span>
           </label>
           <select
             value={poId}
             onChange={(e) => setPoId(e.target.value)}
             className={inputClass}
           >
-            <option value="">No PO linked</option>
+            <option value="">Select a PO</option>
             {pos.map((po) => (
               <option key={po.id} value={po.id}>
                 {po.label}
@@ -337,7 +341,7 @@ function BackfillForm({
             ))}
           </select>
           <p className="mt-1 text-xs text-slate-400">
-            Recommended — the linked PO&apos;s renewals anchor to this date.
+            Required — the linked PO&apos;s renewals anchor to this date.
           </p>
         </div>
 
@@ -381,7 +385,7 @@ function BackfillForm({
       </div>
 
       <div className="mt-4 flex items-center gap-2 border-t border-gray-100 pt-3">
-        <Button size="sm" onClick={handleSave} disabled={pending || !goLiveDate}>
+        <Button size="sm" onClick={handleSave} disabled={pending || !goLiveDate || !poId}>
           {pending ? "Saving…" : "Save"}
         </Button>
         <Button size="sm" variant="ghost" onClick={onCancel} disabled={pending}>

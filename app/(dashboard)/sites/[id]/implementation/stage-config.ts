@@ -108,7 +108,7 @@ export const STAGES: StageDef[] = [
       { key: "trainingProof", label: "Training confirmation", type: "file" },
       { key: "scopeConfiguredPct", label: "Scope configured (%)", type: "number" },
       { key: "pendingItems", label: "Pending scope items", type: "textarea" },
-      { key: "goLiveDate", label: "Go-live date", type: "date", help: "Anchors this site's renewal dates." },
+      { key: "goLiveDate", label: "Go-live date", type: "date", help: "Anchors the linked PO's renewal dates." },
       { key: "goLiveEmailProof", label: "Go-live email proof", type: "file" },
       { key: "liveSitePhotos", label: "Live site pictures", type: "multifile" },
     ],

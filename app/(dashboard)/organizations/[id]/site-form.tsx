@@ -34,7 +34,6 @@ export type SiteInitial = {
   region: string;
   timezone: string;
   gstNumber: string;
-  goLiveDate: string;
   onboardingOwnerId: string;
   csOwnerId: string;
   addressSite: AddressFieldsInput;
@@ -132,7 +131,6 @@ export function SiteFormDialog({
   const [region, setRegion] = useState(initial?.region ?? "");
   const [timezone, setTimezone] = useState(initial?.timezone ?? "");
   const [gstNumber, setGstNumber] = useState(initial?.gstNumber ?? "");
-  const [goLiveDate, setGoLiveDate] = useState(initial?.goLiveDate ?? "");
   const [onboardingOwnerId, setOnboardingOwnerId] = useState(
     initial?.onboardingOwnerId ?? "",
   );
@@ -154,7 +152,6 @@ export function SiteFormDialog({
       region: region || null,
       timezone: timezone || null,
       gstNumber: gstNumber || null,
-      goLiveDate: goLiveDate || null,
       onboardingOwnerId: onboardingOwnerId || null,
       csOwnerId: csOwnerId || null,
       addressSite,
@@ -254,15 +251,6 @@ export function SiteFormDialog({
                 id="site-gst"
                 value={gstNumber}
                 onChange={(e) => setGstNumber(e.target.value)}
-              />
-            </div>
-            <div className="flex flex-col gap-1.5">
-              <Label htmlFor="site-go-live">Go-live date</Label>
-              <Input
-                id="site-go-live"
-                type="date"
-                value={goLiveDate}
-                onChange={(e) => setGoLiveDate(e.target.value)}
               />
             </div>
             <div className="flex flex-col gap-1.5">
