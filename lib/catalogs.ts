@@ -3,6 +3,7 @@
 // (list / add / edit / deactivate) instead of seven bespoke pages.
 
 import { RENEWAL_LOGIC } from "@/lib/renewals";
+import { COST_RECURRENCE } from "@/lib/cost-types";
 
 export type CatalogField = {
   key: string;
@@ -74,9 +75,19 @@ export const CATALOGS: CatalogConfig[] = [
     table: "cost_types",
     label: "Cost Types",
     singular: "Cost Type",
-    description: "Categories used to classify PO line items.",
+    description:
+      "Categories used to classify PO line items. Billing basis decides ARR and revenue recognition: recurring values spread over 12 months from go-live; one-time values are recognised in full in the go-live month.",
     uniqueField: "name",
-    fields: [{ key: "name", label: "Name", type: "text", required: true }],
+    fields: [
+      { key: "name", label: "Name", type: "text", required: true },
+      {
+        key: "recurrence",
+        label: "Billing basis",
+        type: "select",
+        required: true,
+        options: [COST_RECURRENCE.recurring, COST_RECURRENCE.oneTime],
+      },
+    ],
   },
   {
     slug: "products",

@@ -95,6 +95,8 @@ export function FilterBar({
         <option value="">This month</option>
         <option value="week">This week</option>
         <option value="quarter">This quarter</option>
+        <option value="fy">This FY</option>
+        <option value="lastfy">Last FY</option>
       </select>
 
       <select
