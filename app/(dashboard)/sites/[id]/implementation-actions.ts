@@ -165,8 +165,30 @@ async function persistStage(
   const supabase = await createClient();
 
   const missing = missingRequiredFields(stageNumber, data);
+
+  // A recorded go-live must anchor to a PO (owner-confirmed): the PO's renewal
+  // dates hang off this date, so Stage 4 cannot be COMPLETED until the project
+  // has a linked PO. Modelled as a missing requirement (not a hard error) so the
+  // typed date still saves as a draft rather than being lost.
+  let poMissing = false;
+  if (
+    stageNumber === 4 &&
+    typeof data.goLiveDate === "string" &&
+    data.goLiveDate.trim()
+  ) {
+    const { data: proj } = await supabase
+      .from("implementation_projects")
+      .select("po_id")
+      .eq("id", projectId)
+      .maybeSingle();
+    poMissing = !proj?.po_id;
+  }
+  const missingOut = poMissing
+    ? [...missing, { key: "linkedPo", label: "Linked PO (its renewals anchor to this go-live date)" }]
+    : missing;
+
   const stageStatus =
-    markComplete && missing.length === 0 ? "complete" : "in_progress";
+    markComplete && missing.length === 0 && !poMissing ? "complete" : "in_progress";
 
   const { error } = await supabase
     .from("implementation_project_stages")
@@ -182,26 +204,10 @@ async function persistStage(
 
   // Side effects on an explicit, valid save only (spec §5.3/§5.4).
   //   * Each PO's renewal dates are anchored to its linked project's go-live
-  //     date (computed on read in sites/[id]/page.tsx) — so we DON'T need to
-  //     stamp the site here for renewals to be right.
-  //   * We still seed the SITE-level go_live_date the FIRST time any project
-  //     goes live (for the site meta display / status), but never clobber an
-  //     existing value — avoids the multi-project "last write wins" ambiguity.
+  //     date (computed on read in sites/[id]/page.tsx). Go-live lives ONLY on the
+  //     project now — we no longer stamp any site-level go-live date.
   //   * Stage 5 completing sets the site live (spec §5.3).
   if (markComplete) {
-    if (stageNumber === 4 && typeof data.goLiveDate === "string" && data.goLiveDate) {
-      const { data: siteRow } = await supabase
-        .from("sites")
-        .select("go_live_date")
-        .eq("id", siteId)
-        .maybeSingle();
-      if (siteRow && !siteRow.go_live_date) {
-        await supabase
-          .from("sites")
-          .update({ go_live_date: data.goLiveDate })
-          .eq("id", siteId);
-      }
-    }
     if (stageNumber === 5 && stageStatus === "complete") {
       await supabase.from("sites").update({ status: "live" }).eq("id", siteId);
     }
@@ -214,7 +220,7 @@ async function persistStage(
 
   revalidatePath(`/sites/${siteId}/implementation`);
   revalidatePath(`/sites/${siteId}`);
-  return { missing };
+  return { missing: missingOut };
 }
 
 // Explicit Save Stage: validate + possibly complete.
@@ -322,12 +328,16 @@ export async function backfillCompletedProject(
 
   if (!siteId) return { error: "Missing site reference." };
   if (!goLiveDate) return { error: "Enter the go-live date." };
+  // A go-live must anchor to a PO — its renewals are computed from this date.
+  if (!poId) {
+    return { error: "Select the PO this go-live belongs to — its renewals anchor to this date." };
+  }
 
   const supabase = await createClient();
 
   const { data: site } = await supabase
     .from("sites")
-    .select("organization_id, go_live_date")
+    .select("organization_id")
     .eq("id", siteId)
     .maybeSingle();
   if (!site) return { error: "Site not found." };
@@ -396,11 +406,8 @@ export async function backfillCompletedProject(
     if (error) return { error: error.message };
   }
 
-  // Mirror the stepper's live-site side effects: seed the site-level go-live the
-  // first time (never clobber), and set the site live.
-  if (!site.go_live_date) {
-    await supabase.from("sites").update({ go_live_date: goLiveDate }).eq("id", siteId);
-  }
+  // Mirror the stepper's live-site side effect: set the site live. Go-live lives
+  // on the project (Stage 4) only — no site-level go-live date is stamped.
   await supabase.from("sites").update({ status: "live" }).eq("id", siteId);
 
   await writeAudit(supabase, user!.id, "backfill", projectId, null, {

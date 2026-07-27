@@ -21,7 +21,6 @@ export type SiteFormInput = {
   region: string | null;
   timezone: string | null;
   gstNumber: string | null;
-  goLiveDate: string | null; // yyyy-mm-dd
   onboardingOwnerId: string | null;
   csOwnerId: string | null;
   addressSite: AddressFieldsInput;
@@ -60,7 +59,6 @@ export async function createSite(
     region: input.region?.trim() || null,
     timezone: input.timezone?.trim() || null,
     gst_number: input.gstNumber?.trim() || null,
-    go_live_date: input.goLiveDate || null,
     onboarding_owner_id: input.onboardingOwnerId || null,
     cs_owner_id: input.csOwnerId || null,
     address_site: addressToJson(input.addressSite),
@@ -126,7 +124,6 @@ export async function updateSite(
     region: input.region?.trim() || null,
     timezone: input.timezone?.trim() || null,
     gst_number: input.gstNumber?.trim() || null,
-    go_live_date: input.goLiveDate || null,
     onboarding_owner_id: input.onboardingOwnerId || null,
     cs_owner_id: input.csOwnerId || null,
     address_site: addressToJson(input.addressSite),

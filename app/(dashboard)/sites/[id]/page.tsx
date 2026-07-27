@@ -135,7 +135,7 @@ export default async function SitePage({
   const { data: site } = await supabase
     .from("sites")
     .select(
-      `id, name, is_hq, status, region, timezone, gst_number, go_live_date,
+      `id, name, is_hq, status, region, timezone, gst_number,
        onboarding_owner_id, cs_owner_id,
        address_site, address_billing, address_shipping,
        organization:organizations ( id, legal_name, brand_name ),
@@ -344,9 +344,9 @@ export default async function SitePage({
     .order("created_at", { ascending: false });
 
   // Implementation projects: card summary (counts by computed status) AND the
-  // per-PO go-live anchor for renewals. Each project can link a PO; that
-  // project's Stage-4 go-live date drives that PO's renewal dates (resolved
-  // with owner) — falling back to the site's go_live_date when unlinked.
+  // per-PO go-live anchor for renewals. Each project links a PO; that project's
+  // Stage-4 go-live date is the ONLY source of that PO's renewal dates. A PO with
+  // no recorded go-live has no anchor and its renewals show "—" until one is set.
   const { data: implProjects } = await supabase
     .from("implementation_projects")
     .select(
@@ -617,11 +617,12 @@ export default async function SitePage({
         valuePaise: lineValues[i] ?? 0,
       }));
 
-      // Auto date: anchor to the go-live of the project linked to THIS PO; fall
-      // back to the site's go-live when no project is linked yet. A manual
-      // override, when present, wins over this computed date.
+      // Auto date: anchor to the go-live of the project linked to THIS PO
+      // (recorded in Implementation — the only source of go-live). Null when no
+      // go-live is recorded yet → the card shows "—". A manual override, when
+      // present, wins over this computed date.
       const autoRenewalDate = renewalDate(
-        poGoLiveMap.get(r.po_id) ?? site.go_live_date,
+        poGoLiveMap.get(r.po_id) ?? null,
         r.offset_months,
       );
 
@@ -825,7 +826,6 @@ export default async function SitePage({
         regionDisplay={site.region || ""}
         timezoneDisplay={site.timezone || ""}
         gstDisplay={site.gst_number || ""}
-        goLiveDisplay={site.go_live_date ? formatDisplayDate(site.go_live_date) : ""}
         onboardingOwnerDisplay={onboardingOwner?.name || ""}
         csOwnerDisplay={csOwner?.name || ""}
         initial={{
@@ -835,7 +835,6 @@ export default async function SitePage({
           region: site.region ?? "",
           timezone: site.timezone ?? "",
           gstNumber: site.gst_number ?? "",
-          goLiveDate: site.go_live_date ?? "",
           onboardingOwnerId: site.onboarding_owner_id ?? "",
           csOwnerId: site.cs_owner_id ?? "",
           addressSite: toAddressFields(site.address_site),
@@ -1183,7 +1182,7 @@ export default async function SitePage({
                     renewals={renewalsByPo.get(po.id) ?? []}
                     siteId={id}
                     canEdit={canEdit}
-                    goLiveSet={Boolean(site.go_live_date)}
+                    goLiveSet={poGoLiveMap.has(po.id)}
                     paymentTermsOptions={renewalPaymentTermsOptions}
                     renewalPoTypeOptions={renewalPoTypeOptions}
                   />

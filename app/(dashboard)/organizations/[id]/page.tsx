@@ -2,7 +2,6 @@ import Link from "next/link";
 import { notFound, redirect } from "next/navigation";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
-import { formatDate } from "@/lib/date";
 import { formatPaise } from "@/lib/currency";
 import { AddSiteButton } from "./site-form";
 
@@ -77,7 +76,7 @@ export default async function OrganizationDetailPage({
 
   const { data: sites, error: sitesError } = await supabase
     .from("sites")
-    .select("id, name, is_hq, status, region, go_live_date")
+    .select("id, name, is_hq, status, region")
     .eq("organization_id", id)
     .order("is_hq", { ascending: false })
     .order("name");
@@ -260,7 +259,6 @@ export default async function OrganizationDetailPage({
               <th className="px-4 py-3 font-medium">Site</th>
               <th className="px-4 py-3 font-medium">Region</th>
               <th className="px-4 py-3 font-medium">Status</th>
-              <th className="px-4 py-3 font-medium">Go-live</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-slate-100">
@@ -290,9 +288,6 @@ export default async function OrganizationDetailPage({
                   >
                     {site.status}
                   </span>
-                </td>
-                <td className="px-4 py-3 text-slate-600">
-                  {formatDate(site.go_live_date)}
                 </td>
               </tr>
             ))}

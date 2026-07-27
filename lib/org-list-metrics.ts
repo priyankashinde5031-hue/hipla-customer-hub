@@ -42,11 +42,9 @@ export async function getOrganizationMetrics(
   const today = todayIso();
   const fyStart = currentFyStartIso();
 
-  const [posRes, poSitesRes, sitesRes, renewalsRes, projectsRes, invoicesRes, paymentsRes] =
+  const [posRes, renewalsRes, projectsRes, invoicesRes, paymentsRes] =
     await Promise.all([
       supabase.from("purchase_orders").select("id, organization_id"),
-      supabase.from("po_sites").select("po_id, site_id"),
-      supabase.from("sites").select("id, organization_id, go_live_date"),
       supabase
         .from("renewals")
         .select("po_id, organization_id, offset_months, status, renewal_date_override"),
@@ -88,22 +86,12 @@ export async function getOrganizationMetrics(
     }
   }
 
-  // Fallback go-live per PO: the earliest go-live among its covered sites.
-  const siteGoLive = new Map<string, string | null>();
-  for (const s of sitesRes.data ?? []) siteGoLive.set(s.id, s.go_live_date);
-  const poSiteGoLive = new Map<string, string>();
-  for (const link of poSitesRes.data ?? []) {
-    const gl = siteGoLive.get(link.site_id);
-    if (!gl) continue;
-    const existing = poSiteGoLive.get(link.po_id);
-    if (!existing || gl < existing) poSiteGoLive.set(link.po_id, gl);
-  }
-
   // 2. Overdue renewals this FY: upcoming renewals whose effective date landed
-  //    within the current financial year and has already passed.
+  //    within the current financial year and has already passed. Go-live comes
+  //    only from Implementation now; a frozen override still wins when present.
   for (const r of renewalsRes.data ?? []) {
     if (r.status !== "upcoming" || !r.organization_id) continue;
-    const anchor = poGoLive.get(r.po_id) ?? poSiteGoLive.get(r.po_id) ?? null;
+    const anchor = poGoLive.get(r.po_id) ?? null;
     const effective = r.renewal_date_override ?? renewalDate(anchor, r.offset_months);
     if (!effective) continue;
     if (effective >= fyStart && effective < today) {
