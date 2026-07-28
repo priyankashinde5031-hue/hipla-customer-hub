@@ -106,6 +106,32 @@ export default async function SiteImplementationPage({
     };
   });
 
+  // Sign every attachment stored in any stage so its filename can render as a
+  // clickable link (private bucket → short-lived signed URL, like PO cards).
+  const storagePaths = new Set<string>();
+  const collectPaths = (v: unknown) => {
+    if (!v) return;
+    if (Array.isArray(v)) {
+      v.forEach(collectPaths);
+      return;
+    }
+    if (typeof v === "object" && "storagePath" in (v as object)) {
+      const p = (v as { storagePath?: unknown }).storagePath;
+      if (typeof p === "string" && p) storagePaths.add(p);
+    }
+  };
+  projects.forEach((p) => p.stages.forEach((s) => Object.values(s.data).forEach(collectPaths)));
+
+  const signedUrls: Record<string, string> = {};
+  await Promise.all(
+    [...storagePaths].map(async (path) => {
+      const { data: signed } = await supabase.storage
+        .from("implementation-attachments")
+        .createSignedUrl(path, 60 * 60);
+      if (signed?.signedUrl) signedUrls[path] = signed.signedUrl;
+    }),
+  );
+
   const modules: ModuleOption[] = (modulesRaw || []).map((m) => ({
     id: m.id,
     name: m.name,
@@ -148,6 +174,7 @@ export default async function SiteImplementationPage({
         spocs={spocs}
         pos={pos}
         canEdit={canEdit}
+        signedUrls={signedUrls}
       />
     </div>
   );

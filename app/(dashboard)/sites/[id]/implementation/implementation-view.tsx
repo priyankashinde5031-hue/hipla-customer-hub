@@ -1,6 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useRef,
+  useState,
+  useTransition,
+} from "react";
 import { useRouter } from "next/navigation";
 import { toast } from "sonner";
 import {
@@ -128,6 +136,19 @@ function StepperIcon({ status }: { status: StageStatus }) {
   return <Circle className="h-4 w-4 text-slate-300" />;
 }
 
+// ---- Attachment links -----------------------------------------------------
+// Signed URLs for stored files, keyed by storage path. Seeded from the server
+// (existing files) and topped up on upload (freshly added files), so any
+// attachment filename can render as a clickable link without prop-threading.
+const AttachmentUrlsContext = createContext<{
+  get: (storagePath: string) => string | undefined;
+  add: (storagePath: string, url: string) => void;
+}>({ get: () => undefined, add: () => {} });
+
+function useAttachmentUrls() {
+  return useContext(AttachmentUrlsContext);
+}
+
 // ---- Top-level view -------------------------------------------------------
 
 export function ImplementationView({
@@ -137,6 +158,7 @@ export function ImplementationView({
   spocs,
   pos,
   canEdit,
+  signedUrls,
 }: {
   siteId: string;
   projects: ProjectRow[];
@@ -144,8 +166,14 @@ export function ImplementationView({
   spocs: SpocOption[];
   pos: PoOption[];
   canEdit: boolean;
+  signedUrls?: Record<string, string>;
 }) {
   const router = useRouter();
+  const [urlMap, setUrlMap] = useState<Record<string, string>>(signedUrls ?? {});
+  const attachmentUrls = {
+    get: (p: string) => urlMap[p],
+    add: (p: string, url: string) => setUrlMap((m) => ({ ...m, [p]: url })),
+  };
   const [creating, setCreating] = useState(false);
   const [backfilling, setBackfilling] = useState(false);
   const [newName, setNewName] = useState("");
@@ -170,6 +198,7 @@ export function ImplementationView({
   }
 
   return (
+    <AttachmentUrlsContext.Provider value={attachmentUrls}>
     <div className="mt-6">
       {canEdit && (
         <div className="mb-4">
@@ -256,6 +285,7 @@ export function ImplementationView({
         </div>
       )}
     </div>
+    </AttachmentUrlsContext.Provider>
   );
 }
 
@@ -1007,7 +1037,7 @@ function FieldInput({
               key={f.attachmentId}
               className="flex items-center justify-between rounded-lg border border-gray-200 px-2.5 py-1 text-xs"
             >
-              <span className="truncate text-slate-600">{f.filename}</span>
+              <AttachmentLink file={f} />
               {canEdit && (
                 <button
                   type="button"
@@ -1057,6 +1087,26 @@ function FieldInput({
   }
 }
 
+// A stored file's name, rendered as a link to its signed URL when available
+// (opens in a new tab), or plain text while the URL is still resolving.
+function AttachmentLink({ file }: { file: NonNullable<FileValue> }) {
+  const { get } = useAttachmentUrls();
+  const url = get(file.storagePath);
+  if (url) {
+    return (
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="truncate text-indigo-600 underline-offset-2 hover:underline"
+      >
+        {file.filename}
+      </a>
+    );
+  }
+  return <span className="truncate text-slate-600">{file.filename}</span>;
+}
+
 function FileField({
   projectId,
   value,
@@ -1072,6 +1122,7 @@ function FileField({
 }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const { add } = useAttachmentUrls();
 
   async function handleFile(file: File) {
     setUploading(true);
@@ -1084,6 +1135,8 @@ function FileField({
       toast.error(res.error ?? "Upload failed");
       return;
     }
+    // Register the signed URL so the just-uploaded file is clickable right away.
+    if (res.url) add(res.storagePath!, res.url);
     onChange({
       attachmentId: res.attachmentId,
       filename: res.filename!,
@@ -1106,7 +1159,7 @@ function FileField({
       />
       {value && !addMode ? (
         <div className="flex min-w-0 flex-1 items-center justify-between rounded-lg border border-gray-200 px-2.5 py-1 text-xs">
-          <span className="truncate text-slate-600">{value.filename}</span>
+          <AttachmentLink file={value} />
           {canEdit && (
             <button
               type="button"
