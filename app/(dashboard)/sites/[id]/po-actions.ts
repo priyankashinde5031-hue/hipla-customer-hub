@@ -314,6 +314,18 @@ async function syncRenewals(
     }
   }
 
+  // Category names for lines whose renewal basis is decided by category
+  // (the "by category" logic). Absent → treated as non-software (AMC branch).
+  const categoryIds = [...new Set(lineRows.map((r) => r.product_category_id).filter((id): id is string => !!id))];
+  const categoryNameById: Record<string, string> = {};
+  if (categoryIds.length > 0) {
+    const { data: cats } = await supabase
+      .from("product_categories")
+      .select("id, name")
+      .in("id", categoryIds);
+    for (const c of cats ?? []) categoryNameById[c.id as string] = c.name as string;
+  }
+
   const renewalLines: RenewalLine[] = lineRows.map((r) => {
     const term = r.renewal_term_id ? termById[r.renewal_term_id] : undefined;
     return {
@@ -321,6 +333,7 @@ async function syncRenewals(
       logic: term?.logic ?? null,
       escalationPct: term?.escalation_pct ?? null,
       amcPct: term?.amc_pct ?? null,
+      categoryName: r.product_category_id ? categoryNameById[r.product_category_id] ?? null : null,
     };
   });
 

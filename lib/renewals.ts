@@ -75,7 +75,30 @@ export const RENEWAL_LOGIC = {
   flat: "Recurring — flat",
   oneTime: "One-time — no renewal",
   amc: "AMC — annual maintenance",
+  // "After the initial term" renewal whose basis is decided by the line's
+  // product CATEGORY, not the term (owner rule 2026-07-28). Used by the
+  // "After 3 Years" / "After 5 Years" terms: Software/Opex renew at a flat
+  // escalation over base, every other category at a flat AMC of base.
+  byCategory: "Recurring — by category",
 } as const;
+
+// The two rates the "by category" basis applies, and the category test that
+// picks between them. DECISION (owner, 2026-07-28; see [[renewals-feature]]):
+//   * a category that involves software (Software, Opex "Hardware + Software")
+//     renews at base + BY_CATEGORY_ESCALATION_PCT, held FLAT across every
+//     renewal year (not compounding).
+//   * every other category renews at a flat BY_CATEGORY_AMC_PCT of base.
+// The percentages are stored on the term row (escalation_pct / amc_pct); these
+// constants are the fallback when a "by category" term leaves them blank.
+export const BY_CATEGORY_ESCALATION_PCT = 25;
+export const BY_CATEGORY_AMC_PCT = 18;
+
+// A product category renews by escalation (vs AMC) when it involves software.
+// Both qualifying categories — "Software" and "Opex (Hardware + Software)" —
+// contain the word, so a substring test is robust to exact naming.
+export function categoryEscalates(categoryName: string | null | undefined): boolean {
+  return !!categoryName && categoryName.toLowerCase().includes("software");
+}
 
 // One PO line's Year-1 baseline plus the renewal basis carried by its term.
 // Only the percentage relevant to `logic` is used; the other is ignored.
@@ -84,6 +107,7 @@ export type RenewalLine = {
   logic: string | null | undefined; // one of RENEWAL_LOGIC, or null (→ flat)
   escalationPct: number | null | undefined; // per-year compounding step-up %
   amcPct: number | null | undefined; // annual maintenance as a flat % of base
+  categoryName?: string | null; // product category — only read by "by category"
 };
 
 // This line's contribution to the renewal in a given contract year, per its
@@ -100,6 +124,18 @@ function renewalLinePaise(line: RenewalLine, yearsElapsed: number): number {
     }
     case RENEWAL_LOGIC.amc: {
       const pct = line.amcPct && line.amcPct > 0 ? line.amcPct : 0;
+      return Math.round((line.basePaise * pct) / 100);
+    }
+    case RENEWAL_LOGIC.byCategory: {
+      // Basis decided by the line's category, held flat across renewal years
+      // (owner rule): software-involving categories escalate once over base,
+      // everything else takes a flat AMC of base. yearsElapsed is intentionally
+      // ignored — Year 4 and Year 5 carry the same amount.
+      if (categoryEscalates(line.categoryName)) {
+        const pct = line.escalationPct && line.escalationPct > 0 ? line.escalationPct : BY_CATEGORY_ESCALATION_PCT;
+        return Math.round(line.basePaise * (1 + pct / 100));
+      }
+      const pct = line.amcPct && line.amcPct > 0 ? line.amcPct : BY_CATEGORY_AMC_PCT;
       return Math.round((line.basePaise * pct) / 100);
     }
     case RENEWAL_LOGIC.oneTime:

@@ -18,7 +18,15 @@ import {
   type PaymentTermOption,
 } from "./renewals-section";
 import type { PaymentTermSpec } from "@/lib/invoicing";
-import { renewalDate, renewalLineValuesPaise, RENEWAL_LOGIC, type RenewalLine } from "@/lib/renewals";
+import {
+  renewalDate,
+  renewalLineValuesPaise,
+  RENEWAL_LOGIC,
+  categoryEscalates,
+  BY_CATEGORY_ESCALATION_PCT,
+  BY_CATEGORY_AMC_PCT,
+  type RenewalLine,
+} from "@/lib/renewals";
 import { formatDate as formatDisplayDate, formatMonthYear } from "@/lib/date";
 
 // A metric card: label, primary value, and a secondary context line. Pass
@@ -564,25 +572,38 @@ export default async function SitePage({
   // RenewalLine the math consumes.
   const renewalLinesByPo = new Map<
     string,
-    { meta: { description: string; renewalTermName: string | null; logic: string | null; ratePct: number | null; basePaise: number }; line: RenewalLine }[]
+    { meta: { description: string; renewalTermName: string | null; logic: string | null; ratePct: number | null; basePaise: number; categoryName: string | null }; line: RenewalLine }[]
   >();
   for (const po of purchaseOrders) {
     const rows = (po.po_line_items || []).map((li) => {
       const term = Array.isArray(li.renewal_term) ? li.renewal_term[0] : li.renewal_term;
+      const category = Array.isArray(li.line_category) ? li.line_category[0] : li.line_category;
+      const categoryName = (category?.name as string | null) ?? null;
       const logic = (term?.logic as string | null) ?? null;
       const escalationPct = (term?.escalation_pct as number | null) ?? null;
       const amcPct = (term?.amc_pct as number | null) ?? null;
       const basePaise = li.amount_paise ?? Math.round(li.qty * li.unit_price_paise);
+      // The rate that this logic actually uses (escalation vs AMC). For the
+      // "by category" basis it depends on the category: software/opex uses the
+      // escalation rate, everything else the AMC rate.
+      const ratePct =
+        logic === RENEWAL_LOGIC.byCategory
+          ? categoryEscalates(categoryName)
+            ? escalationPct ?? BY_CATEGORY_ESCALATION_PCT
+            : amcPct ?? BY_CATEGORY_AMC_PCT
+          : logic === RENEWAL_LOGIC.amc
+            ? amcPct
+            : escalationPct;
       return {
         meta: {
           description: li.description,
           renewalTermName: (term?.name as string | null) ?? null,
           logic,
-          // The rate that this logic actually uses (escalation vs AMC).
-          ratePct: logic === RENEWAL_LOGIC.amc ? amcPct : escalationPct,
+          ratePct,
           basePaise,
+          categoryName,
         },
-        line: { basePaise, logic, escalationPct, amcPct } satisfies RenewalLine,
+        line: { basePaise, logic, escalationPct, amcPct, categoryName } satisfies RenewalLine,
       };
     });
     renewalLinesByPo.set(po.id, rows);

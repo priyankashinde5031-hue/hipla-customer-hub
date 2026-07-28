@@ -129,6 +129,7 @@ export const CATALOGS: CatalogConfig[] = [
           RENEWAL_LOGIC.flat,
           RENEWAL_LOGIC.oneTime,
           RENEWAL_LOGIC.amc,
+          RENEWAL_LOGIC.byCategory,
         ],
       },
       {
@@ -136,14 +137,16 @@ export const CATALOGS: CatalogConfig[] = [
         label: "Escalation % (per year)",
         type: "number",
         required: false,
-        showWhen: { field: "logic", in: [RENEWAL_LOGIC.escalation] },
+        // "By category" uses this rate for software/opex lines.
+        showWhen: { field: "logic", in: [RENEWAL_LOGIC.escalation, RENEWAL_LOGIC.byCategory] },
       },
       {
         key: "amc_pct",
         label: "AMC % (of line total)",
         type: "number",
         required: false,
-        showWhen: { field: "logic", in: [RENEWAL_LOGIC.amc] },
+        // "By category" uses this rate for every non-software category.
+        showWhen: { field: "logic", in: [RENEWAL_LOGIC.amc, RENEWAL_LOGIC.byCategory] },
       },
     ],
   },

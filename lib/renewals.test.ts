@@ -123,6 +123,42 @@ describe("renewalExpectedPaise", () => {
   it("is 0 for no lines", () => {
     expect(renewalExpectedPaise([], 3)).toBe(0);
   });
+
+  describe("by category basis (After N Years terms)", () => {
+    const byCat = (categoryName: string | null, base = 100_00) => ({
+      basePaise: base,
+      logic: RENEWAL_LOGIC.byCategory,
+      escalationPct: 25,
+      amcPct: 18,
+      categoryName,
+    });
+
+    it("escalates software/opex lines by a flat 25% over base, same every year", () => {
+      expect(renewalExpectedPaise([byCat("Software")], 4)).toBe(125_00);
+      expect(renewalExpectedPaise([byCat("Software")], 5)).toBe(125_00); // held flat
+      expect(renewalExpectedPaise([byCat("Opex (Hardware + Software)")], 4)).toBe(125_00);
+      expect(renewalExpectedPaise([byCat("Opex (Hardware + Software)")], 5)).toBe(125_00);
+    });
+
+    it("takes a flat 18% AMC for every other category", () => {
+      expect(renewalExpectedPaise([byCat("Hardware")], 4)).toBe(18_00);
+      expect(renewalExpectedPaise([byCat("Hardware")], 5)).toBe(18_00);
+      expect(renewalExpectedPaise([byCat("Installation")], 4)).toBe(18_00);
+      expect(renewalExpectedPaise([byCat(null)], 4)).toBe(18_00); // no category → AMC branch
+    });
+
+    it("falls back to 25/18 defaults when the term leaves the percentages blank", () => {
+      const soft = { basePaise: 100_00, logic: RENEWAL_LOGIC.byCategory, escalationPct: null, amcPct: null, categoryName: "Software" };
+      const hard = { basePaise: 100_00, logic: RENEWAL_LOGIC.byCategory, escalationPct: null, amcPct: null, categoryName: "Hardware" };
+      expect(renewalExpectedPaise([soft], 4)).toBe(125_00);
+      expect(renewalExpectedPaise([hard], 4)).toBe(18_00);
+    });
+
+    it("is worth more than ₹0 so the year is actually generated (regression: HIPLA-PO-0192)", () => {
+      // 4 × ₹68,000 Meeting Room Scheduler, Hardware → 18% AMC = ₹48,960/yr.
+      expect(renewalExpectedPaise([byCat("Hardware", 272_000_00)], 4)).toBe(48_960_00);
+    });
+  });
 });
 
 describe("planRenewalSync", () => {
