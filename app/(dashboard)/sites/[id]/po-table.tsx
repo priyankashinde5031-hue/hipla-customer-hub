@@ -74,6 +74,12 @@ export function PoTableRow({
         aria-expanded={open}
         tabIndex={0}
         onKeyDown={(e) => {
+          // Only respond to keys landing on the row itself. The Edit PO dialog
+          // is rendered inside this row's `actions`; React portals bubble the
+          // dialog's key events up through the component tree, so without this
+          // guard pressing Space in a dialog input would be swallowed here
+          // (breaking the spacebar in free-text fields) and toggle the row.
+          if (e.target !== e.currentTarget) return;
           if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
             setOpen((o) => !o);
