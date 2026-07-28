@@ -71,6 +71,17 @@ export type HealthMetrics = {
     renewalsSecuredThisMonthPaise: number;
     renewalsSecuredCount: number;
   };
+  // Booked value within the selected financial year (owner ask): new POs raised
+  // this FY, and renewals recorded as "renewed" this FY. Both scoped by the
+  // active customer/module filter and the FY window.
+  fyBookings: {
+    fyLabel: string; // e.g. "FY 2026–27"
+    windowLabel: string; // e.g. "1 Apr 2026 – 31 Mar 2027"
+    newOrderValuePaise: number;
+    newOrderCount: number;
+    renewalDoneValuePaise: number;
+    renewalDoneCount: number;
+  };
 };
 
 function flatten<T>(v: T | T[] | null | undefined): T | null {
@@ -165,7 +176,7 @@ export async function getHealthMetrics(
     invoicesRes,
     paymentsRes,
   ] = await Promise.all([
-    supabase.from("purchase_orders").select("id, organization_id, contract_time_id"),
+    supabase.from("purchase_orders").select("id, organization_id, contract_time_id, po_received_date"),
     supabase
       .from("po_line_items")
       .select("po_id, qty, unit_price_paise, renewal_term_id, cost_type_id"),
@@ -221,9 +232,13 @@ export async function getHealthMetrics(
   // cost type has no recurrence set yet, we fall back to the Renewal term.
   const recurringLinesByPo = new Map<string, RenewalLine[]>();
   const oneTimePaiseByPo = new Map<string, number>();
+  // Full PO value (all lines, recurring + one-time) — used for the "new order
+  // value booked this FY" figure.
+  const poTotalPaise = new Map<string, number>();
   for (const li of lineItemsRes.data ?? []) {
     const term = li.renewal_term_id ? termById.get(li.renewal_term_id) : undefined;
     const base = Math.round(Number(li.qty) * Number(li.unit_price_paise));
+    poTotalPaise.set(li.po_id, (poTotalPaise.get(li.po_id) ?? 0) + base);
     const recurrence = li.cost_type_id ? costRecurrenceById.get(li.cost_type_id) : undefined;
 
     let recurring: boolean;
@@ -363,6 +378,37 @@ export async function getHealthMetrics(
     renewalsSecuredCount += 1;
   }
 
+  // --- Booked value this FY (owner ask) ------------------------------------
+  // New orders: POs whose received date falls inside the selected FY window
+  // [fy.start, fy.end), valued at their full line-item total. Renewals are
+  // recorded on the renewals table (not as new POs), so the two never overlap.
+  let newOrderValuePaise = 0;
+  let newOrderCount = 0;
+  for (const po of posRes.data ?? []) {
+    const d = po.po_received_date as string | null;
+    if (!d || d < fy.start || d >= fy.end) continue;
+    if (!matchesCustomer(po.organization_id)) continue;
+    if (!poMatchesModule(po.id)) continue;
+    newOrderValuePaise += poTotalPaise.get(po.id) ?? 0;
+    newOrderCount += 1;
+  }
+
+  // Renewals done: cycles marked "renewed" whose received date is in the FY.
+  let renewalDoneValuePaise = 0;
+  let renewalDoneCount = 0;
+  for (const r of renewalsRes.data ?? []) {
+    if (r.status !== "renewed" || !r.renewal_received_date) continue;
+    const d = r.renewal_received_date as string;
+    if (d < fy.start || d >= fy.end) continue;
+    if (!poMatchesModule(r.po_id)) continue;
+    if (!matchesCustomer(r.organization_id)) continue;
+    renewalDoneValuePaise += Number(r.renewal_value_paise ?? 0);
+    renewalDoneCount += 1;
+  }
+
+  const fyEndInclusive = isoDayBefore(fy.end);
+  const fyWindowLabel = `${fmtDay(fy.start)} – ${fmtDay(fyEndInclusive)}`;
+
   return {
     asOf,
     monthLabels,
@@ -395,5 +441,24 @@ export async function getHealthMetrics(
       renewalsSecuredThisMonthPaise: renewalsSecuredPaise,
       renewalsSecuredCount,
     },
+    fyBookings: {
+      fyLabel: fyLabel(fy.start),
+      windowLabel: fyWindowLabel,
+      newOrderValuePaise,
+      newOrderCount,
+      renewalDoneValuePaise,
+      renewalDoneCount,
+    },
   };
+}
+
+// Day label like "1 Apr 2026" for the FY window caption.
+function fmtDay(iso: string): string {
+  const d = new Date(`${iso}T00:00:00Z`);
+  return d.toLocaleDateString("en-IN", {
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }

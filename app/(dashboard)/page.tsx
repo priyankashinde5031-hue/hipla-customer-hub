@@ -236,6 +236,35 @@ async function DashboardBody({
         />
       </div>
 
+      {/* Booked this FY — new business won and renewals closed inside the
+          selected financial year (owner ask). */}
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <HeroTile
+          label={`New order value · ${h.fyBookings.fyLabel}`}
+          value={formatPaiseHero(h.fyBookings.newOrderValuePaise)}
+          deltaPct={null}
+          deltaCaption={h.fyBookings.windowLabel}
+          secondary={
+            h.fyBookings.newOrderCount > 0
+              ? `${h.fyBookings.newOrderCount} new PO${h.fyBookings.newOrderCount === 1 ? "" : "s"}`
+              : "No new POs yet"
+          }
+          series={[]}
+        />
+        <HeroTile
+          label={`Renewal done value · ${h.fyBookings.fyLabel}`}
+          value={formatPaiseHero(h.fyBookings.renewalDoneValuePaise)}
+          deltaPct={null}
+          deltaCaption={h.fyBookings.windowLabel}
+          secondary={
+            h.fyBookings.renewalDoneCount > 0
+              ? `${h.fyBookings.renewalDoneCount} renewal${h.fyBookings.renewalDoneCount === 1 ? "" : "s"} closed`
+              : "No renewals closed yet"
+          }
+          series={[]}
+        />
+      </div>
+
       <SectionDivider>Needs action today</SectionDivider>
 
       {/* Worklist Row 1 — money-first triage KPIs. Colour is disciplined: red
