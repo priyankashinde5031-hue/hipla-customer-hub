@@ -283,7 +283,13 @@ async function storeAttachment(
 // stores (never the bytes). Caller then saves the stage with the reference set.
 export async function uploadImplementationAttachment(
   formData: FormData,
-): Promise<{ error?: string; attachmentId?: string; filename?: string; storagePath?: string }> {
+): Promise<{
+  error?: string;
+  attachmentId?: string;
+  filename?: string;
+  storagePath?: string;
+  url?: string | null;
+}> {
   const user = await getCurrentInternalUser();
   if (!canEditImplementation(user)) {
     return { error: "You don't have permission to upload files." };
@@ -298,10 +304,17 @@ export async function uploadImplementationAttachment(
   const res = await storeAttachment(supabase, user!.id, projectId, file);
   if (res.error || !res.value) return { error: res.error ?? "Upload failed." };
 
+  // Also hand back a signed URL so the just-uploaded file is immediately
+  // clickable without a page refresh (mirrors the server-signed links).
+  const { data: signed } = await supabase.storage
+    .from("implementation-attachments")
+    .createSignedUrl(res.value.storagePath, 60 * 60);
+
   return {
     attachmentId: res.value.attachmentId,
     filename: res.value.filename,
     storagePath: res.value.storagePath,
+    url: signed?.signedUrl ?? null,
   };
 }
 
