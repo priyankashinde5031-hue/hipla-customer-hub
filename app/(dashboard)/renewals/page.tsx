@@ -2,15 +2,17 @@ import Link from "next/link";
 import { createClient } from "@/lib/supabase/server";
 import { formatPaise } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
-import { getDashboardData, getFilterOptions, parseFilterParams } from "@/lib/dashboard-metrics";
+import { getDashboardData, parseFilterParams } from "@/lib/dashboard-metrics";
 import { RENEWAL_UPCOMING_DAYS } from "@/lib/dashboard-config";
-import { ModuleHeader, StatusChip, chipHref } from "../_dashboard/module-header";
+import { StatusChip } from "../_dashboard/module-header";
 import { RenewalAgingTag } from "../_dashboard/tags";
 
 type SearchParams = Record<string, string | string[] | undefined>;
 
 // Portfolio Renewals page — the "View all →" destination for Pending Renewals.
-// Shows every overdue + upcoming renewal (all sites), sorted by revenue impact.
+// The global dropdown filters (range/customer/product) are intentionally
+// removed; the All / Overdue / Upcoming-30d / Later status chips remain, and
+// the total at the top reflects whichever chip is selected.
 export default async function RenewalsPage({
   searchParams,
 }: {
@@ -18,15 +20,10 @@ export default async function RenewalsPage({
 }) {
   const sp = await searchParams;
   const supabase = await createClient();
-  const { customers, products } = await getFilterOptions(supabase);
 
-  const filter = parseFilterParams({
-    range: typeof sp.range === "string" ? sp.range : undefined,
-    customer: typeof sp.customer === "string" ? sp.customer : undefined,
-    module: typeof sp.module === "string" ? sp.module : undefined,
-  });
-  // Wide horizon so "All"/"Later" can show every future renewal for planning;
-  // the "Upcoming" chip narrows to the next 30 days (owner ask).
+  // No dropdown filters — show the whole portfolio. Wide horizon so "All" /
+  // "Later" can include every future renewal for planning.
+  const filter = parseFilterParams({});
   const data = await getDashboardData(supabase, filter, { horizonDays: 3650 });
 
   const isUpcomingSoon = (r: (typeof data.renewals.rows)[number]) =>
@@ -49,18 +46,43 @@ export default async function RenewalsPage({
   const upcomingCount = data.renewals.rows.filter(isUpcomingSoon).length;
   const laterCount = data.renewals.rows.filter(isLater).length;
 
-  const chips = (
-    <>
-      <StatusChip href={chipHref("/renewals", sp, null)} label={`All (${data.renewals.rows.length})`} active={status === "all"} />
-      <StatusChip href={chipHref("/renewals", sp, "overdue")} label={`Overdue (${overdueCount})`} active={status === "overdue"} />
-      <StatusChip href={chipHref("/renewals", sp, "upcoming")} label={`Upcoming · 30d (${upcomingCount})`} active={status === "upcoming"} />
-      <StatusChip href={chipHref("/renewals", sp, "later")} label={`Later (${laterCount})`} active={status === "later"} />
-    </>
-  );
+  // Total reflects the currently-selected chip.
+  const totalPaise = rows.reduce((sum, r) => sum + (r.amountPaise ?? 0), 0);
+  const totalLabel =
+    status === "overdue"
+      ? "Total overdue renewal"
+      : status === "upcoming"
+        ? "Total upcoming renewal · 30d"
+        : status === "later"
+          ? "Total later renewal"
+          : "Total renewal";
+
+  const chipHref = (s: string | null) => (s ? `/renewals?status=${s}` : "/renewals");
 
   return (
     <div>
-      <ModuleHeader title="Renewals" basePath="/renewals" customers={customers} products={products} chips={chips} />
+      <h1 className="text-2xl font-serif font-semibold tracking-tight text-gray-900">
+        Renewals
+      </h1>
+
+      <div className="mt-3 flex flex-wrap gap-2">
+        <StatusChip href={chipHref(null)} label={`All (${data.renewals.rows.length})`} active={status === "all"} />
+        <StatusChip href={chipHref("overdue")} label={`Overdue (${overdueCount})`} active={status === "overdue"} />
+        <StatusChip href={chipHref("upcoming")} label={`Upcoming · 30d (${upcomingCount})`} active={status === "upcoming"} />
+        <StatusChip href={chipHref("later")} label={`Later (${laterCount})`} active={status === "later"} />
+      </div>
+
+      <div className="mt-4 rounded-xl border border-gray-200 bg-white px-5 py-4 shadow-sm">
+        <p className="text-xs font-medium uppercase tracking-wide text-gray-500">
+          {totalLabel}
+        </p>
+        <p className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">
+          {formatPaise(totalPaise)}
+        </p>
+        <p className="mt-0.5 text-xs text-slate-500">
+          {rows.length} {rows.length === 1 ? "renewal" : "renewals"}
+        </p>
+      </div>
 
       <div className="mt-4 overflow-hidden rounded-xl border border-gray-200 bg-white shadow-sm">
         {rows.length === 0 ? (
