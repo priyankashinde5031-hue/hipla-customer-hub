@@ -123,6 +123,11 @@ function describeBreakdownLine(line: RenewalBreakdownLine): string {
       return line.ratePct
         ? `AMC ${line.ratePct}% of ${base}`
         : `AMC, no % set`;
+    case RENEWAL_LOGIC.byCategory:
+      // ratePct already resolved to the rate this line's category uses.
+      return line.ratePct
+        ? `${base} + ${line.ratePct}% (by category)`
+        : `${base}, by category`;
     case RENEWAL_LOGIC.oneTime:
       return `${base} one-time — not renewed`;
     default:
