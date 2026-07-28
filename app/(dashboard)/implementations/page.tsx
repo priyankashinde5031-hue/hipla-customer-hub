@@ -30,7 +30,7 @@ export default async function ImplementationsPage({
   });
   const data = await getDashboardData(supabase, filter, { allImplementations: true });
 
-  const status = typeof sp.status === "string" ? sp.status : "all";
+  const status = typeof sp.status === "string" ? sp.status : "in_progress";
   const rows = data.implementation.rows.filter((p) =>
     status === "at_risk"
       ? p.atRisk
@@ -43,7 +43,7 @@ export default async function ImplementationsPage({
 
   const chips = (
     <>
-      <StatusChip href={chipHref("/implementations", sp, null)} label={`All (${data.implementation.rows.length})`} active={status === "all"} />
+      <StatusChip href={chipHref("/implementations", sp, "all")} label={`All (${data.implementation.rows.length})`} active={status === "all"} />
       <StatusChip href={chipHref("/implementations", sp, "at_risk")} label={`At risk (${data.implementation.atRiskCount})`} active={status === "at_risk"} />
       <StatusChip href={chipHref("/implementations", sp, "in_progress")} label={`Active (${data.implementation.activeCount})`} active={status === "in_progress"} />
       <StatusChip href={chipHref("/implementations", sp, "completed")} label="Completed" active={status === "completed"} />
