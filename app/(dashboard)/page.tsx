@@ -8,8 +8,10 @@ import {
   parseFilterParams,
   type DashboardFilter,
 } from "@/lib/dashboard-metrics";
+import { getFyBookings } from "@/lib/fy-bookings";
 import { FilterBar } from "./_dashboard/filter-bar";
 import { KpiTile } from "./_dashboard/kpi-tile";
+import { FyStatTile } from "./_dashboard/fy-stat-tile";
 import { Panel, PanelRow } from "./_dashboard/panel";
 import { RenewalAgingTag, InvoiceAgingTag, Sparkline } from "./_dashboard/tags";
 import { KpiSkeleton, PanelSkeleton } from "./_dashboard/skeletons";
@@ -96,7 +98,10 @@ async function DashboardBody({
   qs: string;
 }) {
   const supabase = await createClient();
-  const data = await getDashboardData(supabase, filter);
+  const [data, fyBookings] = await Promise.all([
+    getDashboardData(supabase, filter),
+    getFyBookings(supabase, filter),
+  ]);
   const { renewals, invoices, implementation, usage } = data;
 
   const worstUsage = usage.rows[0];
@@ -184,6 +189,31 @@ async function DashboardBody({
               : "All customers healthy"
           }
           tone={usage.belowExpectedCount > 0 ? "red" : "default"}
+        />
+      </div>
+
+      {/* Booked this FY — total new order value and renewals closed inside the
+          current financial year (April–March). Filter-aware like the KPIs. */}
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FyStatTile
+          label={`New order value · ${fyBookings.fyLabel}`}
+          value={formatPaiseShort(fyBookings.newOrderValuePaise)}
+          sub={
+            fyBookings.newOrderCount > 0
+              ? `${fyBookings.newOrderCount} new PO${fyBookings.newOrderCount === 1 ? "" : "s"}`
+              : "No new POs yet"
+          }
+          caption={fyBookings.windowLabel}
+        />
+        <FyStatTile
+          label={`Renewal done value · ${fyBookings.fyLabel}`}
+          value={formatPaiseShort(fyBookings.renewalDoneValuePaise)}
+          sub={
+            fyBookings.renewalDoneCount > 0
+              ? `${fyBookings.renewalDoneCount} renewal${fyBookings.renewalDoneCount === 1 ? "" : "s"} closed`
+              : "No renewals closed yet"
+          }
+          caption={fyBookings.windowLabel}
         />
       </div>
 
