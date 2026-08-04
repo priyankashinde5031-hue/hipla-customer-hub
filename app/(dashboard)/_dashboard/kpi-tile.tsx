@@ -24,7 +24,6 @@ export function KpiTile({
   value,
   count,
   secondary,
-  positive,
   tone = "default",
 }: {
   href: string;
@@ -32,7 +31,6 @@ export function KpiTile({
   value: string;
   count?: string | null;
   secondary?: string | null;
-  positive?: string | null; // the paired good-news figure, shown in green
   tone?: KpiTone;
 }) {
   return (
@@ -53,9 +51,6 @@ export function KpiTile({
         {count ? <span className="text-sm text-slate-500">{count}</span> : null}
       </div>
       <p className="mt-1 min-h-[1rem] text-xs text-slate-500">{secondary ?? ""}</p>
-      {positive ? (
-        <p className="mt-0.5 text-xs font-medium text-emerald-600">{positive}</p>
-      ) : null}
     </Link>
   );
 }

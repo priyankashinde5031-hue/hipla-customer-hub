@@ -97,7 +97,7 @@ export function isProjectAtRisk(args: {
 // window (renewals 60d, invoices 30d); picking a range overrides both.
 // ---------------------------------------------------------------------------
 
-export type TimeRange = "week" | "month" | "quarter" | "custom" | "fy" | "lastfy";
+export type TimeRange = "week" | "month" | "quarter" | "custom";
 
 export type DashboardFilter = {
   range?: TimeRange | null;
@@ -116,12 +116,7 @@ export function parseFilterParams(sp: {
   module?: string;
 }): DashboardFilter {
   const range =
-    sp.range === "week" ||
-    sp.range === "quarter" ||
-    sp.range === "custom" ||
-    sp.range === "month" ||
-    sp.range === "fy" ||
-    sp.range === "lastfy"
+    sp.range === "week" || sp.range === "quarter" || sp.range === "custom" || sp.range === "month"
       ? (sp.range as TimeRange)
       : null;
   return {

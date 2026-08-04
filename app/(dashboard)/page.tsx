@@ -1,6 +1,6 @@
 import { Suspense } from "react";
 import { createClient } from "@/lib/supabase/server";
-import { formatPaiseShort, formatPaiseHero, formatPaiseFull } from "@/lib/currency";
+import { formatPaiseShort } from "@/lib/currency";
 import { formatDate } from "@/lib/date";
 import {
   getDashboardData,
@@ -8,11 +8,10 @@ import {
   parseFilterParams,
   type DashboardFilter,
 } from "@/lib/dashboard-metrics";
-import { getHealthMetrics } from "@/lib/health-metrics";
+import { getFyBookings } from "@/lib/fy-bookings";
 import { FilterBar } from "./_dashboard/filter-bar";
 import { KpiTile } from "./_dashboard/kpi-tile";
-import { HeroTile } from "./_dashboard/hero-tile";
-import { MonthlyBars } from "./_dashboard/trend-chart";
+import { FyStatTile } from "./_dashboard/fy-stat-tile";
 import { Panel, PanelRow } from "./_dashboard/panel";
 import { RenewalAgingTag, InvoiceAgingTag, Sparkline } from "./_dashboard/tags";
 import { KpiSkeleton, PanelSkeleton } from "./_dashboard/skeletons";
@@ -68,31 +67,10 @@ export default async function DashboardHome({
   );
 }
 
-function pctLabel(ratio: number | null): string {
-  return ratio === null ? "—" : `${Math.round(ratio * 100)}%`;
-}
-
-// Subtle divider that titles a band of the page (establishes the health →
-// worklist hierarchy the brief asks for).
-function SectionDivider({ children }: { children: React.ReactNode }) {
-  return (
-    <div className="mt-10 flex items-center gap-2">
-      <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">{children}</h2>
-      <div className="h-px flex-1 bg-slate-200" />
-    </div>
-  );
-}
-
 function DashboardSkeleton() {
   return (
     <>
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <div key={i} className="h-[132px] animate-pulse rounded-xl border border-slate-200 bg-slate-50" />
-        ))}
-      </div>
-      <SectionDivider>Needs action today</SectionDivider>
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {Array.from({ length: 4 }).map((_, i) => (
           <KpiSkeleton key={i} />
         ))}
@@ -120,14 +98,13 @@ async function DashboardBody({
   qs: string;
 }) {
   const supabase = await createClient();
-  const [data, h] = await Promise.all([
+  const [data, fyBookings] = await Promise.all([
     getDashboardData(supabase, filter),
-    getHealthMetrics(supabase, filter),
+    getFyBookings(supabase, filter),
   ]);
   const { renewals, invoices, implementation, usage } = data;
 
   const worstUsage = usage.rows[0];
-  const onTrack = Math.max(0, implementation.activeCount - implementation.atRiskCount);
   // renewals.rows = overdue + upcoming (within RENEWAL_UPCOMING_DAYS = 30d).
   // Split them so overdue and upcoming get their own panels.
   const overdueRenewals = renewals.rows.filter((r) => r.overdue);
@@ -159,132 +136,25 @@ async function DashboardBody({
       >
         {r.overdue ? `${Math.abs(r.daysUntil ?? 0)}d overdue` : `in ${r.daysUntil}d`}
       </span>
-      <span className="w-24 shrink-0 text-right text-sm font-medium tabular-nums text-gray-900">
-        {formatPaiseFull(r.amountPaise)}
+      <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums text-gray-900">
+        {formatPaiseShort(r.amountPaise)}
       </span>
     </PanelRow>
   );
 
   return (
     <>
-      {/* Layer 1 — business health. Largest type; first glance lands here. */}
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
-        <HeroTile
-          label="ARR"
-          value={formatPaiseHero(h.arr.valuePaise)}
-          deltaPct={h.arr.deltaPct}
-          deltaCaption="vs a year ago"
-          series={h.arr.series}
-        />
-        <HeroTile
-          label="MRR"
-          value={formatPaiseHero(h.mrr.valuePaise)}
-          deltaPct={h.mrr.deltaPct}
-          deltaCaption="vs last month"
-          secondary="ARR ÷ 12"
-          series={h.mrr.series}
-        />
-        <HeroTile
-          label={`Revenue · ${h.revenueFy.label}`}
-          value={formatPaiseHero(h.revenueFy.valuePaise)}
-          deltaPct={h.revenueFy.deltaPct}
-          deltaCaption="vs last FY"
-          secondary="recognised"
-          series={h.revenueFy.series}
-        />
-        <HeroTile
-          label="Net revenue retention"
-          value={pctLabel(h.retention.nrr)}
-          deltaPct={null}
-          deltaCaption={h.retention.windowLabel}
-          secondary={`GRR ${pctLabel(h.retention.grr)}`}
-          series={[]}
-        />
-      </div>
-
-      {/* Month-by-month ARR & MRR — the actual ₹ value for each of the last 12
-          months, readable per bar (owner ask). */}
-      <div className="mt-3 grid grid-cols-1 gap-3 lg:grid-cols-2">
-        <MonthlyBars
-          title="ARR · last 12 months"
-          currentValue={formatPaiseHero(h.arr.valuePaise)}
-          labels={h.monthLabels}
-          values={h.arr.series}
-          format={formatPaiseShort}
-          accent="indigo"
-        />
-        <MonthlyBars
-          title="MRR · last 12 months"
-          currentValue={formatPaiseHero(h.mrr.valuePaise)}
-          labels={h.monthLabels}
-          values={h.mrr.series}
-          format={formatPaiseShort}
-          accent="sky"
-        />
-      </div>
-
-      {/* Revenue recognised per month — recurring ÷12 spread + one-time lumps in
-          their go-live month (owner's rule). Spikes mark one-time hardware/setup. */}
-      <div className="mt-3">
-        <MonthlyBars
-          title={`Revenue recognised · last 12 months (${h.revenueFy.label} to date: ${formatPaiseHero(h.revenueFy.valuePaise)})`}
-          currentValue={formatPaiseShort(h.revenueFy.series[h.revenueFy.series.length - 1] ?? 0)}
-          labels={h.monthLabels}
-          values={h.revenueFy.series}
-          format={formatPaiseShort}
-          accent="emerald"
-        />
-      </div>
-
-      {/* Booked this FY — new business won and renewals closed inside the
-          selected financial year (owner ask). */}
-      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <HeroTile
-          label={`New order value · ${h.fyBookings.fyLabel}`}
-          value={formatPaiseHero(h.fyBookings.newOrderValuePaise)}
-          deltaPct={null}
-          deltaCaption={h.fyBookings.windowLabel}
-          secondary={
-            h.fyBookings.newOrderCount > 0
-              ? `${h.fyBookings.newOrderCount} new PO${h.fyBookings.newOrderCount === 1 ? "" : "s"}`
-              : "No new POs yet"
-          }
-          series={[]}
-        />
-        <HeroTile
-          label={`Renewal done value · ${h.fyBookings.fyLabel}`}
-          value={formatPaiseHero(h.fyBookings.renewalDoneValuePaise)}
-          deltaPct={null}
-          deltaCaption={h.fyBookings.windowLabel}
-          secondary={
-            h.fyBookings.renewalDoneCount > 0
-              ? `${h.fyBookings.renewalDoneCount} renewal${h.fyBookings.renewalDoneCount === 1 ? "" : "s"} closed`
-              : "No renewals closed yet"
-          }
-          series={[]}
-        />
-      </div>
-
-      <SectionDivider>Needs action today</SectionDivider>
-
-      {/* Worklist Row 1 — money-first triage KPIs. Colour is disciplined: red
-          only for genuinely-overdue money; each alarm is paired with the
-          matching good-news figure (collected / secured this month). */}
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
+      {/* Row 1 — the four money-first KPIs. */}
+      <div className="mt-6 grid grid-cols-2 gap-3 lg:grid-cols-4">
         <KpiTile
           href={`/renewals${qs || "?"}${qs ? "&" : ""}status=overdue`}
           label="Pending renewals"
           value={formatPaiseShort(renewals.overdueValuePaise)}
-          count={renewals.overdueCount > 0 ? `${renewals.overdueCount} overdue` : "none overdue"}
+          count={`${renewals.overdueCount} overdue`}
           secondary={
             renewals.upcomingCount > 0
-              ? `${formatPaiseShort(renewals.upcomingValuePaise)} renewing in 30d`
-              : "Nothing due in 30 days"
-          }
-          positive={
-            h.positives.renewalsSecuredCount > 0
-              ? `${formatPaiseShort(h.positives.renewalsSecuredThisMonthPaise)} secured this month`
-              : null
+              ? `${formatPaiseShort(renewals.upcomingValuePaise)} renewing soon · ${renewals.upcomingCount}`
+              : "No renewals due soon"
           }
           tone={renewals.overdueCount > 0 ? "red" : "default"}
         />
@@ -292,39 +162,58 @@ async function DashboardBody({
           href={`/invoices${qs || "?"}${qs ? "&" : ""}status=outstanding`}
           label="Expected collection"
           value={formatPaiseShort(invoices.overdueValuePaise)}
-          count={invoices.overdueCount > 0 ? `${invoices.overdueCount} overdue` : "none overdue"}
-          secondary={`${formatPaiseShort(invoices.dueSoonValuePaise)} due in 30d`}
-          positive={
-            h.positives.collectedThisMonthPaise > 0
-              ? `${formatPaiseShort(h.positives.collectedThisMonthPaise)} collected this month`
-              : null
-          }
+          count={`${invoices.overdueCount} overdue`}
+          secondary={`${formatPaiseShort(invoices.dueSoonValuePaise)} due soon`}
           tone={invoices.overdueValuePaise > 0 ? "red" : "default"}
         />
         <KpiTile
           href={`/implementations${qs}`}
           label="Implementations"
-          value={`${implementation.activeCount}`}
-          count="active"
+          value={`${implementation.activeCount} active`}
+          count={implementation.atRiskCount > 0 ? `${implementation.atRiskCount} at risk` : null}
           secondary={
             implementation.atRiskCount > 0
-              ? `${implementation.atRiskCount} at risk — stalled or past go-live`
+              ? "Stalled or past go-live"
               : "All on track"
           }
-          positive={onTrack > 0 ? `${onTrack} on track` : null}
           tone={implementation.atRiskCount > 0 ? "amber" : "default"}
         />
         <KpiTile
           href={`/usage${qs}`}
           label="Usage alerts"
           value={`${usage.belowExpectedCount}`}
-          count={usage.belowExpectedCount > 0 ? "below expected" : "all healthy"}
+          count="below expected"
           secondary={
             worstUsage
               ? `Worst ${Math.round(worstUsage.deviationPct)}% · ${worstUsage.customer}`
-              : "Every tracked customer healthy"
+              : "All customers healthy"
           }
-          tone={usage.belowExpectedCount > 0 ? "amber" : "default"}
+          tone={usage.belowExpectedCount > 0 ? "red" : "default"}
+        />
+      </div>
+
+      {/* Booked this FY — total new order value and renewals closed inside the
+          current financial year (April–March). Filter-aware like the KPIs. */}
+      <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <FyStatTile
+          label={`New order value · ${fyBookings.fyLabel}`}
+          value={formatPaiseShort(fyBookings.newOrderValuePaise)}
+          sub={
+            fyBookings.newOrderCount > 0
+              ? `${fyBookings.newOrderCount} new PO${fyBookings.newOrderCount === 1 ? "" : "s"}`
+              : "No new POs yet"
+          }
+          caption={fyBookings.windowLabel}
+        />
+        <FyStatTile
+          label={`Renewal done value · ${fyBookings.fyLabel}`}
+          value={formatPaiseShort(fyBookings.renewalDoneValuePaise)}
+          sub={
+            fyBookings.renewalDoneCount > 0
+              ? `${fyBookings.renewalDoneCount} renewal${fyBookings.renewalDoneCount === 1 ? "" : "s"} closed`
+              : "No renewals closed yet"
+          }
+          caption={fyBookings.windowLabel}
         />
       </div>
 
@@ -379,8 +268,8 @@ async function DashboardBody({
               </span>
               <InvoiceAgingTag aging={inv.aging} />
               <Meta>{formatDate(inv.dueDate)}</Meta>
-              <span className="w-24 shrink-0 text-right text-sm font-medium tabular-nums text-gray-900">
-                {formatPaiseFull(inv.balancePaise)}
+              <span className="w-20 shrink-0 text-right text-sm font-medium tabular-nums text-gray-900">
+                {formatPaiseShort(inv.balancePaise)}
               </span>
             </PanelRow>
           ))}
