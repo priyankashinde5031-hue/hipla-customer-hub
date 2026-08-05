@@ -13,6 +13,7 @@ import { FilterBar } from "./_dashboard/filter-bar";
 import { KpiTile } from "./_dashboard/kpi-tile";
 import { FyStatTile } from "./_dashboard/fy-stat-tile";
 import { Panel, PanelRow } from "./_dashboard/panel";
+import { RevenueStrip } from "./_dashboard/revenue-strip";
 import { RenewalAgingTag, InvoiceAgingTag, Sparkline } from "./_dashboard/tags";
 import { KpiSkeleton, PanelSkeleton } from "./_dashboard/skeletons";
 
@@ -216,6 +217,15 @@ async function DashboardBody({
           caption={fyBookings.windowLabel}
         />
       </div>
+
+      {/* Revenue strip — FY ARR (all components in the FY), recognised/projected
+          split, and current-month revenue. Loads its own schedule data, streamed
+          in its own Suspense so it never delays the rest of the dashboard. */}
+      <Suspense
+        fallback={<div className="mt-4 h-28 animate-pulse rounded-xl border border-slate-200 bg-slate-50" />}
+      >
+        <RevenueStrip />
+      </Suspense>
 
       {/* Row 2 — renewals, split into overdue (needs action now) and upcoming
           (next 30 days) so the two are never conflated. */}

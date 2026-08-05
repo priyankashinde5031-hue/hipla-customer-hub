@@ -1,0 +1,737 @@
+[
+{
+"id": "ff34bdfa-4845-4a7c-9e80-d9eae0e41cf4",
+"code": "IMPL-XECWPUJ9-ODX",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-21T11:22:26.47217+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-21T11:22:26.47217+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-21T11:22:26.47217+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2024-10-24",
+"goLiveEmailProof": {
+"filename": "WhatsApp Image 2026-07-23 at 16.08.03.jpeg",
+"storagePath": "ff34bdfa-4845-4a7c-9e80-d9eae0e41cf4/1784803369391-WhatsApp_Image_2026-07-23_at_16.08.03.jpeg",
+"attachmentId": "4add9c37-50d4-498c-a985-9fd45ef6eda9"
+}
+},
+"updated_at": "2026-07-23T10:42:54.884+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-21T11:22:26.47217+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "67cbfe99-a5ae-468f-b759-6bec70efd672",
+"code": "IMPL-NXLQME78-RDB",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-11T08:32:46.710144+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:32:46.710144+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:32:46.710144+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2026-01-28",
+"goLiveEmailProof": {
+"filename": "Nitesh Group Broadway - Go live.pdf",
+"storagePath": "67cbfe99-a5ae-468f-b759-6bec70efd672/1783758831430-Nitesh_Group_Broadway_-_Go_live.pdf",
+"attachmentId": "612bcc9d-c300-42ec-a69b-9bd994621a07"
+}
+},
+"updated_at": "2026-07-24T10:36:37.637+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:32:46.710144+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "0aeadc73-58ca-4012-a63f-abb8383dd472",
+"code": "IMPL-T29P5PMT-415",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-27T15:11:46.019854+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:11:46.019854+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:11:46.019854+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2025-08-01",
+"goLiveEmailProof": {
+"filename": "Screenshot 2026-07-27 202913.png",
+"storagePath": "0aeadc73-58ca-4012-a63f-abb8383dd472/1785165128910-Screenshot_2026-07-27_202913.png",
+"attachmentId": "159fdda0-b45b-4d8c-a79d-54ccd467df2e"
+}
+},
+"updated_at": "2026-07-27T15:13:34.435+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:11:46.019854+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "60f69ad4-cba3-44b7-a795-8df8a63f7fc3",
+"code": "IMPL-F3Q6R7QF-35I",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-27T15:47:39.589541+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:47:39.589541+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:47:39.589541+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2025-09-12",
+"goLiveEmailProof": {
+"filename": "Screenshot 2026-07-27 211008.png",
+"storagePath": "60f69ad4-cba3-44b7-a795-8df8a63f7fc3/1785167524107-Screenshot_2026-07-27_211008.png",
+"attachmentId": "083d0f43-5eaf-40be-b257-5a3ae88e7223"
+}
+},
+"updated_at": "2026-07-27T15:52:11.413+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:47:39.589541+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "611340be-5c73-4256-be0a-c17bae67bb23",
+"code": "IMPL-ZLLH1CEG-QMF",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-11T08:34:58.749418+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:34:58.749418+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:34:58.749418+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2026-01-28",
+"goLiveEmailProof": {
+"filename": "Nitesh Group - Lexington Avenue.pdf",
+"storagePath": "611340be-5c73-4256-be0a-c17bae67bb23/1783758962086-Nitesh_Group_-_Lexington_Avenue.pdf",
+"attachmentId": "ca647664-ef12-4f74-af2d-e58614065ac3"
+}
+},
+"updated_at": "2026-07-11T08:36:06.553+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:34:58.749418+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "6944794d-6e46-42fa-9823-86020752193c",
+"code": "IMPL-RC0ASYWF-BRX",
+"stages": [
+{
+"data": {
+"salesScopeSignoff": "signed off "
+},
+"updated_at": "2026-07-28T05:24:01.451+00:00",
+"stage_number": 5,
+"stage_status": "in_progress"
+},
+{
+"data": {},
+"updated_at": "2026-07-21T11:23:08.108033+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-21T11:23:08.108033+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-21T11:23:08.108033+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2025-11-01",
+"goLiveEmailProof": {
+"filename": "Inbox - Go Live (1-11-2025).pdf",
+"storagePath": "6944794d-6e46-42fa-9823-86020752193c/1784802472530-Inbox_-_Go_Live__1-11-2025_.pdf",
+"attachmentId": "4060bb6d-2b94-461c-8d53-4585938059f2"
+}
+},
+"updated_at": "2026-07-23T10:28:34.011+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+}
+]
+},
+{
+"id": "cb419b56-c21e-4812-b9c8-38b036a289b4",
+"code": "IMPL-XOUV8QJE-QML",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-11T07:02:42.542887+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T07:02:42.542887+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T07:02:42.542887+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2025-12-18",
+"goLiveEmailProof": {
+"filename": "VCL group - Go live.pdf",
+"storagePath": "cb419b56-c21e-4812-b9c8-38b036a289b4/1783754282230-VCL_group_-_Go_live.pdf",
+"attachmentId": "e05b210b-e8dc-4e46-8488-d5e681394c6f"
+}
+},
+"updated_at": "2026-07-11T07:18:17.753+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {
+"salesScopeSignoff": "done backdated "
+},
+"updated_at": "2026-07-11T09:36:49.204+00:00",
+"stage_number": 5,
+"stage_status": "complete"
+}
+]
+},
+{
+"id": "6143e561-703e-4824-8853-31ce535e505f",
+"code": "IMPL-WB1AGY5Z-JNX",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-11T08:20:22.09+00:00",
+"stage_number": 1,
+"stage_status": "in_progress"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:18:47.562762+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:18:47.562762+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2026-01-28",
+"goLiveEmailProof": {
+"filename": "Nitesh Group Timesquare - Go live.pdf",
+"storagePath": "6143e561-703e-4824-8853-31ce535e505f/1783758095876-Nitesh_Group_Timesquare_-_Go_live.pdf",
+"attachmentId": "599b586a-7386-4807-8f23-524f5a8cfe5b"
+}
+},
+"updated_at": "2026-07-11T08:21:43.85+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:18:47.562762+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "1c199af8-1723-4b5c-b953-8c8503f935e1",
+"code": "IMPL-Y6UI1C2T-XJR",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-28T04:27:11.707944+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:27:11.707944+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:27:11.707944+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2026-02-12",
+"goLiveEmailProof": {
+"filename": "Screenshot 2026-07-28 095932.png",
+"storagePath": "1c199af8-1723-4b5c-b953-8c8503f935e1/1785213015760-Screenshot_2026-07-28_095932.png",
+"attachmentId": "f8dea159-0694-45a5-9bd7-4719816d5540"
+}
+},
+"updated_at": "2026-07-28T04:30:22.113+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:27:11.707944+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "e7e6cd4b-4456-487f-b080-e24cb617b653",
+"code": "IMPL-WQSCAE59-0L9",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-11T09:44:00.549221+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T09:44:00.549221+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T09:44:00.549221+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2026-02-16",
+"goLiveEmailProof": {
+"filename": "PO-VMS- Terra Grande, Rishikesh (Hipla).pdf",
+"storagePath": "e7e6cd4b-4456-487f-b080-e24cb617b653/1783763075104-PO-VMS-_Terra_Grande__Rishikesh__Hipla_.pdf",
+"attachmentId": "2b447033-84fb-4a83-b02e-6d89b0e103bb"
+}
+},
+"updated_at": "2026-07-11T09:44:40.505+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T09:44:00.549221+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "b4af6dcb-a308-47f8-a9e7-f0d3732d3a03",
+"code": "IMPL-HVAG62Q9-4BD",
+"stages": [
+{
+"data": {
+"goLiveDate": "2025-11-13",
+"goLiveEmailProof": {
+"filename": "Screenshot 2026-07-27 205056.png",
+"storagePath": "b4af6dcb-a308-47f8-a9e7-f0d3732d3a03/1785165732492-Screenshot_2026-07-27_205056.png",
+"attachmentId": "c2812239-a746-4142-b418-3ec42a51e98e"
+}
+},
+"updated_at": "2026-07-27T15:22:20.369+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:21:23.535059+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:21:23.535059+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:21:23.535059+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:21:23.535059+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "1af92baf-0e2b-47f4-8331-f39185119adc",
+"code": "IMPL-MV7BMRUM-DPP",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-11T08:23:10.179709+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:23:10.179709+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:23:10.179709+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2026-01-29",
+"goLiveEmailProof": {
+"filename": "Nitesh Group - NIC - Go live.pdf",
+"storagePath": "1af92baf-0e2b-47f4-8331-f39185119adc/1783758709593-Nitesh_Group_-_NIC_-_Go_live.pdf",
+"attachmentId": "07f00930-4da2-4f24-be29-e35724b32bf4"
+}
+},
+"updated_at": "2026-07-11T08:31:54.936+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T08:23:10.179709+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "3977c5a6-4014-4e85-87fb-8825ab1c4c73",
+"code": "IMPL-ENRD1XAY-7KP",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-11T06:52:00.632139+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T06:52:00.632139+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T06:52:00.632139+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2025-07-18",
+"goLiveEmailProof": {
+"filename": "VCL group - Go live.pdf",
+"storagePath": "3977c5a6-4014-4e85-87fb-8825ab1c4c73/1783753034169-VCL_group_-_Go_live.pdf",
+"attachmentId": "920f4bc6-2f41-49b1-8677-7a1b5ef3046b"
+}
+},
+"updated_at": "2026-07-11T06:57:33.703+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T06:52:00.632139+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "eda98044-3806-470f-9e09-b10c0424795e",
+"code": "IMPL-EMM58P6Z-H07",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-11T10:24:00.428379+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T10:24:00.428379+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T10:24:00.428379+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2026-03-12",
+"goLiveEmailProof": {
+"filename": "Go live email proof.pdf",
+"storagePath": "eda98044-3806-470f-9e09-b10c0424795e/1783765524916-Go_live_email_proof.pdf",
+"attachmentId": "842cc5dc-1177-4871-bb5d-b136279ee992"
+}
+},
+"updated_at": "2026-07-11T10:25:35.914+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-11T10:24:00.428379+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "25c1d78e-477c-4ec7-8eb2-5455eb10d270",
+"code": "IMPL-F1BN1QL6-XWL",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-27T15:30:55.604478+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:30:55.604478+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2026-04-27",
+"goLiveEmailProof": {
+"filename": "Screenshot 2026-07-27 210146.png",
+"storagePath": "25c1d78e-477c-4ec7-8eb2-5455eb10d270/1785166341081-Screenshot_2026-07-27_210146.png",
+"attachmentId": "845c4e45-b189-4a5e-869e-e1e3fa3f1213"
+}
+},
+"updated_at": "2026-07-27T15:32:45.605+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:30:55.604478+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-27T15:30:55.604478+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "af65ef07-b153-4977-a8a0-6ed554f6b2c9",
+"code": "IMPL-M28PDI3O-RZN",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-28T04:13:45.368277+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:13:45.368277+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:13:45.368277+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2025-05-12",
+"goLiveEmailProof": {
+"filename": "Screenshot 2026-07-28 094638.png",
+"storagePath": "af65ef07-b153-4977-a8a0-6ed554f6b2c9/1785212225728-Screenshot_2026-07-28_094638.png",
+"attachmentId": "33e432f7-6c9b-4b7a-b0ed-89775fe46de9"
+}
+},
+"updated_at": "2026-07-28T04:17:10.138+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:13:45.368277+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+},
+{
+"id": "b0fd922a-ddb7-45fa-9c35-879bbd2e232f",
+"code": "IMPL-R4P4TF94-1QA",
+"stages": [
+{
+"data": {},
+"updated_at": "2026-07-28T04:44:28.775602+00:00",
+"stage_number": 1,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:44:28.775602+00:00",
+"stage_number": 2,
+"stage_status": "not_started"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:44:28.775602+00:00",
+"stage_number": 3,
+"stage_status": "not_started"
+},
+{
+"data": {
+"goLiveDate": "2025-09-08",
+"goLiveEmailProof": {
+"filename": "Screenshot 2026-07-28 101403.png",
+"storagePath": "b0fd922a-ddb7-45fa-9c35-879bbd2e232f/1785213888903-Screenshot_2026-07-28_101403.png",
+"attachmentId": "97e0b44d-0821-405e-a11d-5301b6152b7b"
+}
+},
+"updated_at": "2026-07-28T04:46:57.832+00:00",
+"stage_number": 4,
+"stage_status": "complete"
+},
+{
+"data": {},
+"updated_at": "2026-07-28T04:44:28.775602+00:00",
+"stage_number": 5,
+"stage_status": "not_started"
+}
+]
+}
+]

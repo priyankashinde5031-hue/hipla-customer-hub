@@ -1,0 +1,35 @@
+-- 2026-07-28 — Cleared the Implementations "At risk" list (documentation only).
+--
+-- This migration is intentionally a NO-OP. The change it records was applied to
+-- the live "Hipla" database on 2026-07-28 as a one-time DATA fix via the REST
+-- API (the DB password for `supabase db push` was unavailable at the time), so
+-- there is nothing left for `supabase db push` to execute — this file exists
+-- only to keep the migration history and the repo in sync with what happened.
+--
+-- WHAT WAS DONE
+--   Every implementation project that the dashboard flagged AT-RISK
+--   (overall_status='in_progress' AND (Stage-4 goLiveDate in the past OR the
+--   current stage open >= 14 days), per lib/dashboard-metrics.ts isProjectAtRisk)
+--   had all five of its stage rows set to stage_status='complete'. The existing
+--   recompute_overall_status trigger then moved each parent to
+--   overall_status='completed', which drops it from the at-risk rule.
+--
+--   17 projects were converted. AU Small Finance Bank's genuine in-progress
+--   project (org a0daa2fe-2bb6-4b2f-ba44-667d284a71ad) was EXCLUDED at the
+--   owner's request and left in_progress.
+--
+-- WHY CONVERT INSTEAD OF DELETE
+--   These projects were opened only to hold a go-live date before the "Record a
+--   past go-live" backfill existed. Their Stage-4 goLiveDate is the LIVE anchor
+--   for each linked PO's renewal dates (the 2026-07-27 freeze deliberately did
+--   NOT pin these). Deleting would blank those renewal dates to "—". Marking the
+--   stages complete clears the at-risk list while leaving every stage's `data`
+--   (and therefore the renewal anchor) untouched.
+--
+-- REVERSIBILITY
+--   The pre-change stage statuses of the 17 converted projects are saved in
+--   supabase/backups/impl_convert_20260728.json (project_code + each stage's
+--   prior stage_status). To undo a project, restore its stage_status values from
+--   that file; the trigger will recompute overall_status back to in_progress.
+
+select 1 where false;  -- no-op

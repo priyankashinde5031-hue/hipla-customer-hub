@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
+import { regenerateScheduleForPo } from "@/lib/revenue-schedule";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
 import { missingRequiredFields, type StageData, type FileValue } from "./implementation/stage-config";
 
@@ -218,6 +219,24 @@ async function persistStage(
     stage_status: stageStatus,
   });
 
+  // Re-anchor revenue schedules when an anchor-affecting stage changes (spec §4,
+  // §7): stage 1 = expected delivery, stage 4 = actual go-live. Writes only the
+  // revenue_schedule table; non-fatal so a schedule hiccup never blocks the save.
+  if (stageNumber === 1 || stageNumber === 4) {
+    const { data: proj } = await supabase
+      .from("implementation_projects")
+      .select("po_id")
+      .eq("id", projectId)
+      .maybeSingle();
+    if (proj?.po_id) {
+      try {
+        await regenerateScheduleForPo(supabase, proj.po_id);
+      } catch {
+        /* schedule refresh is best-effort here; a nightly/backfill will catch up */
+      }
+    }
+  }
+
   revalidatePath(`/sites/${siteId}/implementation`);
   revalidatePath(`/sites/${siteId}`);
   return { missing: missingOut };
@@ -432,6 +451,14 @@ export async function backfillCompletedProject(
     has_proof: !!proof,
     has_commercial: !!commercial,
   });
+
+  // A recorded go-live is an actual anchor — re-materialise this PO's schedules
+  // so elapsed months flip to recognised (spec §4). Writes only revenue_schedule.
+  try {
+    await regenerateScheduleForPo(supabase, poId);
+  } catch {
+    /* best-effort; the backfill command / nightly recompute will reconcile */
+  }
 
   revalidatePath(`/sites/${siteId}/implementation`);
   revalidatePath(`/sites/${siteId}`);
