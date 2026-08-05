@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { createClient } from "@/lib/supabase/server";
 import { getCurrentInternalUser, canEditCatalogs } from "@/lib/auth/current-user";
 import { buildSchedule, type PaymentTermSpec } from "@/lib/invoicing";
+import { regenerateScheduleForRenewalCycle } from "@/lib/revenue-schedule";
 
 // Same permission rule the rest of the commercial flow uses (admin/manager).
 const canEditCommercials = canEditCatalogs;
@@ -185,6 +186,15 @@ export async function updateRenewal(
   if (error) return { error: error.message };
 
   await writeAudit(supabase, user!.id, "update", renewalId, before, patch);
+
+  // Value or override-date edits change this cycle's schedule (spec §7). Rebuild
+  // just this cycle; writes only revenue_schedule.
+  try {
+    await regenerateScheduleForRenewalCycle(supabase, renewalId);
+  } catch {
+    /* best-effort; nightly recompute / backfill will reconcile */
+  }
+
   revalidatePath(`/sites/${siteId}`);
   return {};
 }
@@ -220,6 +230,14 @@ export async function markRenewalDone(
   if (error) return { error: error.message };
 
   await writeAudit(supabase, user!.id, "update", renewalId, before, { status: "renewed" });
+
+  // A renewal marked done retroactively recognises its elapsed months (spec §5).
+  // Rebuild just this cycle's schedule; writes only revenue_schedule.
+  try {
+    await regenerateScheduleForRenewalCycle(supabase, renewalId);
+  } catch {
+    /* best-effort; nightly recompute / backfill will reconcile */
+  }
 
   revalidatePath(`/sites/${siteId}`);
   return {};

@@ -17,6 +17,12 @@ import {
   type RenewalBreakdownLine,
   type PaymentTermOption,
 } from "./renewals-section";
+import {
+  RevenueForPo,
+  type RevenueLineItem,
+  type RevenueRenewalItem,
+} from "./revenue-section";
+import { toYearMonth, type RecognitionMethod } from "@/lib/revenue-engine";
 import type { PaymentTermSpec } from "@/lib/invoicing";
 import {
   renewalDate,
@@ -178,6 +184,7 @@ export default async function SitePage({
          po_modules ( module_id, license_count, module:modules ( name ) ),
          po_line_items (
            id, description, qty, unit_price_paise, amount_paise,
+           recognition_method, coverage_months, revenue_excluded, derived_from_line_item_id,
            product_id, product_category_id, cost_type_id, renewal_term_id,
            product:products!product_id ( name ),
            line_category:product_categories!product_category_id ( name ),
@@ -238,6 +245,39 @@ export default async function SitePage({
       return [po.id, net + gst];
     }),
   );
+
+  // Revenue schedule aggregates (spec §8). Read the materialised ledger for this
+  // site's POs and roll up per line item: recognised-to-date and total scheduled.
+  // Read-only — the Revenue tab writes via setLineItemRecognition, never here.
+  const { data: scheduleRows } =
+    poIds.length > 0
+      ? await supabase
+          .from("revenue_schedule")
+          .select("line_item_id, renewal_cycle_id, amount_paise, recognition_status")
+          .in("po_id", poIds)
+      : { data: [] };
+
+  // Recognised-to-date and total-scheduled, rolled up per line item AND per
+  // renewal cycle (renewals are synthetic line items — spec §2).
+  const recognisedByLine = new Map<string, number>();
+  const scheduledByLine = new Map<string, number>();
+  const recognisedByRenewal = new Map<string, number>();
+  const scheduledByRenewal = new Map<string, number>();
+  for (const r of scheduleRows || []) {
+    if (r.line_item_id) {
+      const id = r.line_item_id as string;
+      scheduledByLine.set(id, (scheduledByLine.get(id) ?? 0) + r.amount_paise);
+      if (r.recognition_status === "recognised") {
+        recognisedByLine.set(id, (recognisedByLine.get(id) ?? 0) + r.amount_paise);
+      }
+    } else if (r.renewal_cycle_id) {
+      const id = r.renewal_cycle_id as string;
+      scheduledByRenewal.set(id, (scheduledByRenewal.get(id) ?? 0) + r.amount_paise);
+      if (r.recognition_status === "recognised") {
+        recognisedByRenewal.set(id, (recognisedByRenewal.get(id) ?? 0) + r.amount_paise);
+      }
+    }
+  }
 
   // Signed URLs for any attached PO documents (private bucket).
   const poAttachmentById = new Map<string, { filename: string; url: string | null }>();
@@ -364,12 +404,19 @@ export default async function SitePage({
     .eq("site_id", site.id);
 
   const poGoLiveMap = new Map<string, string>();
+  // Expected delivery (Implementation stage 1) — the revenue anchor fallback
+  // when a PO has no actual go-live yet (spec §4).
+  const poExpectedMap = new Map<string, string>();
   for (const p of implProjects || []) {
     if (!p.po_id) continue;
     const stage4 = (p.stages || []).find((s) => s.stage_number === 4);
     const goLive = (stage4?.data as { goLiveDate?: string } | null)?.goLiveDate;
     // First linked project with a go-live wins (one project per PO expected).
     if (goLive && !poGoLiveMap.has(p.po_id)) poGoLiveMap.set(p.po_id, goLive);
+    const stage1 = (p.stages || []).find((s) => s.stage_number === 1);
+    const expected = (stage1?.data as { expectedDeliveryDate?: string } | null)
+      ?.expectedDeliveryDate;
+    if (expected && !poExpectedMap.has(p.po_id)) poExpectedMap.set(p.po_id, expected);
   }
 
   const implTotal = implProjects?.length ?? 0;
@@ -565,6 +612,44 @@ export default async function SitePage({
   const poReceivedById = new Map<string, string | null>(
     purchaseOrders.map((po) => [po.id, po.po_received_date ?? null]),
   );
+
+  // Revenue view of each renewal cycle — synthetic auto-SaaS line items (spec
+  // §2, §8). The anchor mirrors the engine exactly: manual override → the PO's
+  // go-live + offset → expected delivery + offset; value is the actual renewal
+  // value once done, else the expected value.
+  const renewalRevenueByPo = new Map<string, RevenueRenewalItem[]>();
+  for (const r of renewalRows ?? []) {
+    const goLive = poGoLiveMap.get(r.po_id) ?? null;
+    const expected = poExpectedMap.get(r.po_id) ?? null;
+    const baseDate = goLive ?? expected;
+    const source = goLive
+      ? ("actual_go_live" as const)
+      : expected
+        ? ("expected_delivery" as const)
+        : null;
+    const effDate =
+      r.renewal_date_override ??
+      (baseDate ? renewalDate(baseDate, r.offset_months) : null);
+    const anchorMonth = toYearMonth(effDate);
+    const done = r.status === "renewed";
+    const valuePaise =
+      (done
+        ? r.renewal_value_paise ?? r.expected_value_paise
+        : r.expected_value_paise) ?? 0;
+    const list = renewalRevenueByPo.get(r.po_id) ?? [];
+    list.push({
+      id: r.id,
+      yearNumber: r.year_number,
+      valuePaise,
+      coverageMonths: r.term_months ?? 12,
+      anchorMonth,
+      anchorSource: anchorMonth ? source : null,
+      done,
+      recognisedPaise: recognisedByRenewal.get(r.id) ?? 0,
+      scheduledTotalPaise: scheduledByRenewal.get(r.id) ?? 0,
+    });
+    renewalRevenueByPo.set(r.po_id, list);
+  }
 
   // Per-PO renewal lines (base amount + the term's logic/rates), so each card
   // can show a line-by-line breakdown built with the SAME math the projection
@@ -1152,6 +1237,45 @@ export default async function SitePage({
                       </tfoot>
                     </table>
                   )}
+
+                  {(() => {
+                    // Resolve this PO's revenue anchor (spec §4): actual go-live
+                    // wins; else expected delivery; else none.
+                    const goLive = poGoLiveMap.get(po.id) ?? null;
+                    const expected = poExpectedMap.get(po.id) ?? null;
+                    const anchorMonth = toYearMonth(goLive) ?? toYearMonth(expected);
+                    const anchorSource = goLive
+                      ? ("actual_go_live" as const)
+                      : expected
+                        ? ("expected_delivery" as const)
+                        : null;
+                    const revenueLines: RevenueLineItem[] = (
+                      po.po_line_items || []
+                    ).map((li) => ({
+                      id: li.id,
+                      description: li.description,
+                      amountPaise: li.amount_paise,
+                      method: (li.recognition_method as RecognitionMethod | null) ?? null,
+                      coverageMonths: li.coverage_months ?? 12,
+                      revenueExcluded: !!li.revenue_excluded,
+                      isScopeChange: !!li.derived_from_line_item_id,
+                      recognisedPaise: recognisedByLine.get(li.id) ?? 0,
+                      scheduledTotalPaise: scheduledByLine.get(li.id) ?? 0,
+                    }));
+                    return (
+                      <RevenueForPo
+                        poId={po.id}
+                        siteId={id}
+                        canEdit={canEdit}
+                        anchorMonth={anchorMonth}
+                        anchorSource={anchorMonth ? anchorSource : null}
+                        contractTermLabel={contractTime?.name ?? null}
+                        poValuePaise={poNetById.get(po.id) ?? 0}
+                        lineItems={revenueLines}
+                        renewalLines={renewalRevenueByPo.get(po.id) ?? []}
+                      />
+                    );
+                  })()}
 
                   <InvoicesPanel
                     invoices={poInvoices.map((inv) => {
