@@ -60,25 +60,23 @@ function ymBefore(a: string, b: string): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Recognition status — two states only (spec §5).
-//   recognised  = delivered AND the month has elapsed (strictly before the
-//                 current month; today's in-progress month stays projected
-//                 until it elapses — spec §5 nightly recompute).
-//   projected   = everything else (future months; anything not yet delivered,
-//                 including a not-yet-done renewal's own start month).
-// "delivered" means: a non-renewal line item anchored on an ACTUAL go-live, or
-// a renewal cycle marked done. Both collapse to a single boolean here.
+// Recognition status — two states, EVENT-DRIVEN (owner rule, 2026-08-05).
+//   recognised = the order has gone live, or the renewal is marked done. Every
+//                month of that schedule counts as recognised — past AND future.
+//   projected  = not delivered yet: a line still on its expected-delivery date
+//                (not live), or a renewal not yet marked done.
+// It does NOT depend on today's date: a live order's future months are
+// recognised the moment it goes live. "delivered" = a line item anchored on an
+// ACTUAL go-live, or a renewal cycle marked done. (This replaces the earlier
+// month-by-month "recognise as time passes" rule, and removes any need for a
+// nightly recompute — status only changes on a go-live / renewal-done event.)
 // ---------------------------------------------------------------------------
 
 export type RecognitionStatus = "recognised" | "projected";
 export type AnchorSource = "actual_go_live" | "expected_delivery";
 
-export function assignStatus(
-  periodMonth: string, // "YYYY-MM"
-  opts: { delivered: boolean; currentMonth: string },
-): RecognitionStatus {
-  if (!opts.delivered) return "projected";
-  return ymBefore(periodMonth, opts.currentMonth) ? "recognised" : "projected";
+export function assignStatus(delivered: boolean): RecognitionStatus {
+  return delivered ? "recognised" : "projected";
 }
 
 // ---------------------------------------------------------------------------
@@ -103,7 +101,6 @@ export type ShapeInput = {
   coverageMonths: number;
   anchorSource: AnchorSource;
   delivered: boolean;
-  currentMonth: string; // "YYYY-MM"
   // PO cancellation (spec §6): zero months on/after this month, history intact.
   cancelledEffectiveMonth?: string | null; // "YYYY-MM" / "YYYY-MM-DD" / null
 };
@@ -136,10 +133,7 @@ export function shapeScheduleRows(input: ShapeInput): ShapedRow[] {
       amount_paise: r.amount,
       component: r.component,
       is_recurring: isRecurringComponent(r.component),
-      recognition_status: assignStatus(r.month, {
-        delivered: input.delivered,
-        currentMonth: input.currentMonth,
-      }),
+      recognition_status: assignStatus(input.delivered),
       anchor_source: input.anchorSource,
     });
   }
@@ -244,7 +238,6 @@ async function deleteScheduleFor(
 export async function regenerateScheduleForLineItem(
   db: Db,
   lineItemId: string,
-  now: Date = new Date(),
 ): Promise<{ inserted: number; reason?: string }> {
   const { data: li } = await db
     .from("po_line_items")
@@ -280,7 +273,6 @@ export async function regenerateScheduleForLineItem(
     coverageMonths: li.coverage_months ?? 12,
     anchorSource: anchor.anchorSource,
     delivered: anchor.anchorSource === "actual_go_live",
-    currentMonth: currentYearMonth(now),
     cancelledEffectiveMonth: po.cancelled_effective_month,
   });
 
@@ -307,7 +299,6 @@ export async function regenerateScheduleForLineItem(
 export async function regenerateScheduleForRenewalCycle(
   db: Db,
   renewalId: string,
-  now: Date = new Date(),
 ): Promise<{ inserted: number; reason?: string }> {
   const { data: rn } = await db
     .from("renewals")
@@ -354,8 +345,7 @@ export async function regenerateScheduleForRenewalCycle(
     anchorMonth,
     coverageMonths: rn.term_months ?? 12,
     anchorSource,
-    delivered: done, // a renewal is delivered only once marked done (spec §5)
-    currentMonth: currentYearMonth(now),
+    delivered: done, // a renewal is delivered (→ recognised) once marked done
     cancelledEffectiveMonth: po?.cancelled_effective_month ?? null,
   });
 
@@ -387,30 +377,11 @@ function addMonthsYm(yearMonth: string, months: number): string {
   return `${y}-${String(m + 1).padStart(2, "0")}`;
 }
 
-// Nightly status recompute (spec §5): a projected month whose time has passed
-// (with delivery confirmed) flips to recognised. Cheaper than regenerating every
-// schedule: flip only the rows that are now stale, in bulk.
-//   projected -> recognised where the row was anchored on an actual go-live (or
-//   belongs to a done renewal) AND its month has elapsed.
-// Renewal "done" is already baked into rows at generation time (a done renewal's
-// rows carry actual/expected source but were generated with delivered=true, so
-// its past months are already recognised); the nightly job only needs to catch
-// non-renewal actual-go-live rows and done-renewal rows crossing the month line.
-export async function recomputeStatuses(
-  db: Db,
-  now: Date = new Date(),
-): Promise<{ flipped: number }> {
-  const cutoff = monthFirstDay(currentYearMonth(now)); // first day of this month
-  // Elapsed = period_month strictly before this month's first day.
-  const { data } = await db
-    .from("revenue_schedule")
-    .update({ recognition_status: "recognised" })
-    .eq("recognition_status", "projected")
-    .eq("anchor_source", "actual_go_live")
-    .lt("period_month", cutoff)
-    .select("id");
-  return { flipped: data?.length ?? 0 };
-}
+// (No nightly status recompute: status is now event-driven — a schedule is
+// recognised the moment its order goes live or its renewal is marked done, for
+// every month, so nothing changes merely because a date passed. Status is only
+// (re)written when those events fire the regenerate triggers, or on a full
+// backfill. The `recompute` CLI command therefore just runs a full backfill.)
 
 // Read revenue_schedule rows for reporting, paging past Supabase's default
 // 1000-row cap so aggregates are never silently truncated. `applyFilter` narrows
@@ -448,7 +419,6 @@ export async function fetchScheduleRowsPaged(
 export async function regenerateScheduleForPo(
   db: Db,
   poId: string,
-  now: Date = new Date(),
 ): Promise<{ rows: number }> {
   let rows = 0;
   const { data: lineItems } = await db
@@ -456,14 +426,14 @@ export async function regenerateScheduleForPo(
     .select("id")
     .eq("po_id", poId);
   for (const li of lineItems ?? []) {
-    rows += (await regenerateScheduleForLineItem(db, li.id, now)).inserted;
+    rows += (await regenerateScheduleForLineItem(db, li.id)).inserted;
   }
   const { data: renewals } = await db
     .from("renewals")
     .select("id")
     .eq("po_id", poId);
   for (const rn of renewals ?? []) {
-    rows += (await regenerateScheduleForRenewalCycle(db, rn.id, now)).inserted;
+    rows += (await regenerateScheduleForRenewalCycle(db, rn.id)).inserted;
   }
   return { rows };
 }
@@ -472,19 +442,18 @@ export async function regenerateScheduleForPo(
 // every PO line item and every renewal cycle. Safe to run repeatedly.
 export async function backfillAllSchedules(
   db: Db,
-  now: Date = new Date(),
 ): Promise<{ lineItems: number; renewals: number; rows: number }> {
   let rows = 0;
 
   const { data: lineItems } = await db.from("po_line_items").select("id");
   for (const li of lineItems ?? []) {
-    const res = await regenerateScheduleForLineItem(db, li.id, now);
+    const res = await regenerateScheduleForLineItem(db, li.id);
     rows += res.inserted;
   }
 
   const { data: renewals } = await db.from("renewals").select("id");
   for (const rn of renewals ?? []) {
-    const res = await regenerateScheduleForRenewalCycle(db, rn.id, now);
+    const res = await regenerateScheduleForRenewalCycle(db, rn.id);
     rows += res.inserted;
   }
 

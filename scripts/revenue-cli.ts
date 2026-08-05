@@ -10,10 +10,7 @@
 // resolve anchors; never edits, moves, or deletes any customer-entered row.
 
 import { createClient } from "@supabase/supabase-js";
-import {
-  backfillAllSchedules,
-  recomputeStatuses,
-} from "../lib/revenue-schedule";
+import { backfillAllSchedules } from "../lib/revenue-schedule";
 
 function client() {
   const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -44,9 +41,13 @@ async function main() {
   }
 
   if (cmd === "recompute") {
-    console.log("Recomputing recognition status (projected → recognised where elapsed)…");
-    const res = await recomputeStatuses(db);
-    console.log(`Done. ${res.flipped} rows flipped to recognised.`);
+    // Status is event-driven now (recognised once live / renewed), so there is
+    // nothing time-based to recompute — a full rebuild is the reconcile op.
+    console.log("Rebuilding the revenue ledger (status is event-driven)…");
+    const res = await backfillAllSchedules(db);
+    console.log(
+      `Done. ${res.lineItems} line items + ${res.renewals} renewals → ${res.rows} schedule rows.`,
+    );
     return;
   }
 

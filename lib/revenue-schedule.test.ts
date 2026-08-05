@@ -18,7 +18,6 @@ const base: ShapeInput = {
   coverageMonths: 12,
   anchorSource: "actual_go_live",
   delivered: true,
-  currentMonth: "2099-01", // far future -> everything elapsed unless overridden
 };
 
 // ---------------------------------------------------------------------------
@@ -45,21 +44,16 @@ describe("fyLabel / fyQuarter", () => {
 });
 
 // ---------------------------------------------------------------------------
-// Status (spec §5)
+// Status — EVENT-DRIVEN (owner rule): delivered → recognised (every month),
+// not delivered → projected. No dependency on today's date.
 // ---------------------------------------------------------------------------
 
 describe("assignStatus", () => {
-  it("not delivered -> always projected", () => {
-    expect(assignStatus("2020-01", { delivered: false, currentMonth: "2099-01" })).toBe("projected");
+  it("delivered -> recognised", () => {
+    expect(assignStatus(true)).toBe("recognised");
   });
-  it("delivered + elapsed -> recognised", () => {
-    expect(assignStatus("2025-05", { delivered: true, currentMonth: "2025-08" })).toBe("recognised");
-  });
-  it("delivered + current month -> still projected until it elapses", () => {
-    expect(assignStatus("2025-08", { delivered: true, currentMonth: "2025-08" })).toBe("projected");
-  });
-  it("delivered + future -> projected", () => {
-    expect(assignStatus("2025-12", { delivered: true, currentMonth: "2025-08" })).toBe("projected");
+  it("not delivered -> projected", () => {
+    expect(assignStatus(false)).toBe("projected");
   });
 });
 
@@ -68,7 +62,7 @@ describe("assignStatus", () => {
 // ---------------------------------------------------------------------------
 
 describe("shapeScheduleRows: basic SaaS", () => {
-  const rows = shapeScheduleRows({ ...base, anchorMonth: "2026-06", currentMonth: "2099-01" });
+  const rows = shapeScheduleRows({ ...base, anchorMonth: "2026-06" });
   it("period_month is the first of the month, with FY fields", () => {
     expect(rows[0].period_month).toBe("2026-06-01");
     expect(rows[0].fy_label).toBe("FY 2026–27");
@@ -81,66 +75,66 @@ describe("shapeScheduleRows: basic SaaS", () => {
   });
 });
 
-describe("not-delivered line item -> every month projected (spec §5)", () => {
-  it("expected-delivery anchor is entirely projected", () => {
+describe("delivery drives status (owner rule)", () => {
+  it("not delivered (expected-delivery anchor) -> every month projected", () => {
     const rows = shapeScheduleRows({
       ...base,
       anchorSource: "expected_delivery",
       delivered: false,
-      currentMonth: "2099-01",
     });
     expect(rows.every((r) => r.recognition_status === "projected")).toBe(true);
   });
+
+  it("delivered -> EVERY month recognised, including future ones", () => {
+    // A live order (or done renewal) anchored far in the future is still fully
+    // recognised — recognition follows the event, not the calendar.
+    const rows = shapeScheduleRows({
+      ...base,
+      anchorMonth: "2030-01",
+      delivered: true,
+    });
+    expect(rows.every((r) => r.recognition_status === "recognised")).toBe(true);
+  });
 });
 
-// Retroactive renewal (spec §5, §12): marking a renewal done in month 4
-// backfills months 1–3 (its elapsed months) as recognised; month 4 onward stays
-// projected. Anchor Jan-2025, "now" = Apr-2025 (the 4th month), delivered=true.
-describe("retroactive renewal backfill", () => {
+// Renewal marked done → the whole cycle is recognised, past AND future.
+describe("done renewal is fully recognised", () => {
   const rows = shapeScheduleRows({
     valuePaise: P(120_000),
     method: "saas",
     anchorMonth: "2025-01",
     coverageMonths: 12,
     anchorSource: "actual_go_live",
-    delivered: true,
-    currentMonth: "2025-04",
+    delivered: true, // renewal marked done
   });
-  it("Jan/Feb/Mar recognised, Apr onward projected", () => {
-    const status = (ym: string) => rows.find((r) => r.period_month === `${ym}-01`)!.recognition_status;
-    expect(status("2025-01")).toBe("recognised");
-    expect(status("2025-02")).toBe("recognised");
-    expect(status("2025-03")).toBe("recognised");
-    expect(status("2025-04")).toBe("projected");
-    expect(status("2025-12")).toBe("projected");
+  it("all 12 months recognised regardless of month", () => {
+    expect(rows).toHaveLength(12);
+    expect(rows.every((r) => r.recognition_status === "recognised")).toBe(true);
   });
 });
 
-// Re-anchor (spec §4, §12): setting an actual go-live moves the schedule off the
-// expected date and re-labels elapsed months from projected to recognised.
+// Re-anchor: an expected-delivery schedule is projected; once the actual go-live
+// lands, the whole thing (every month) becomes recognised.
 describe("re-anchor from expected to actual", () => {
   const projected = shapeScheduleRows({
     ...base,
-    anchorMonth: "2025-09", // expected delivery Sep-2025
+    anchorMonth: "2025-09",
     anchorSource: "expected_delivery",
     delivered: false,
-    currentMonth: "2026-01",
   });
   const reanchored = shapeScheduleRows({
     ...base,
-    anchorMonth: "2025-06", // actual go-live turned out to be Jun-2025
+    anchorMonth: "2025-06",
     anchorSource: "actual_go_live",
     delivered: true,
-    currentMonth: "2026-01",
   });
   it("months shift to the actual anchor", () => {
     expect(projected[0].period_month).toBe("2025-09-01");
     expect(reanchored[0].period_month).toBe("2025-06-01");
   });
-  it("elapsed months flip projected -> recognised", () => {
+  it("expected → all projected; actual go-live → all recognised", () => {
     expect(projected.every((r) => r.recognition_status === "projected")).toBe(true);
-    expect(reanchored.some((r) => r.recognition_status === "recognised")).toBe(true);
-    expect(reanchored.find((r) => r.period_month === "2025-06-01")!.recognition_status).toBe("recognised");
+    expect(reanchored.every((r) => r.recognition_status === "recognised")).toBe(true);
   });
 });
 
@@ -153,7 +147,6 @@ describe("cancellation zeroes forward only", () => {
     coverageMonths: 12,
     anchorSource: "actual_go_live",
     delivered: true,
-    currentMonth: "2099-01",
   });
   const cancelled = shapeScheduleRows({
     valuePaise: P(144_000),
@@ -162,7 +155,6 @@ describe("cancellation zeroes forward only", () => {
     coverageMonths: 12,
     anchorSource: "actual_go_live",
     delivered: true,
-    currentMonth: "2099-01",
     cancelledEffectiveMonth: "2025-07", // terminated effective Jul-2025
   });
   it("Nov-24 → Jun-25 survive; Jul-25 onward gone", () => {
