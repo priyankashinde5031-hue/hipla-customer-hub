@@ -78,7 +78,7 @@ export async function createSpox(siteId: string, input: SpoxInput): Promise<Acti
   if (error || !data) return { error: error?.message ?? "Could not add the contact." };
 
   await writeAudit(supabase, user!.id, "create", data.id, null, row);
-  revalidatePath(`/sites/${siteId}/spox`);
+  revalidatePath(`/sites/${siteId}/spoc`);
   revalidatePath(`/sites/${siteId}`);
   return { id: data.id };
 }
@@ -110,7 +110,7 @@ export async function updateSpox(
   if (error) return { error: error.message };
 
   await writeAudit(supabase, user!.id, "update", spoxId, before as Record<string, unknown>, row);
-  revalidatePath(`/sites/${siteId}/spox`);
+  revalidatePath(`/sites/${siteId}/spoc`);
   revalidatePath(`/sites/${siteId}`);
   return { id: spoxId };
 }
@@ -176,7 +176,7 @@ export async function deactivateSpox(
     status: "inactive",
     replaced_by_id: replacementId,
   });
-  revalidatePath(`/sites/${siteId}/spox`);
+  revalidatePath(`/sites/${siteId}/spoc`);
   revalidatePath(`/sites/${siteId}`);
   return { id: replacementId };
 }
@@ -202,7 +202,7 @@ export async function deleteSpox(siteId: string, spoxId: string): Promise<Action
   if (error) return { error: error.message };
 
   await writeAudit(supabase, user!.id, "delete", spoxId, before as Record<string, unknown>, null);
-  revalidatePath(`/sites/${siteId}/spox`);
+  revalidatePath(`/sites/${siteId}/spoc`);
   revalidatePath(`/sites/${siteId}`);
   return { id: spoxId };
 }

@@ -139,7 +139,7 @@ export function SpoxView({
         toast.error(res.error);
         return;
       }
-      toast.success("Spox added.");
+      toast.success("SPOC added.");
       setShowAdd(false);
       router.refresh();
     });
@@ -152,7 +152,7 @@ export function SpoxView({
         toast.error(res.error);
         return;
       }
-      toast.success("Spox updated.");
+      toast.success("SPOC updated.");
       setEditing(null);
       router.refresh();
     });
@@ -165,7 +165,7 @@ export function SpoxView({
         toast.error(res.error);
         return;
       }
-      toast.success("Spox deleted.");
+      toast.success("SPOC deleted.");
       setDeleting(null);
       router.refresh();
     });
@@ -192,16 +192,16 @@ export function SpoxView({
 
       {/* Add button + form */}
       {canEdit && !showAdd && !editing && (
-        <Button onClick={() => setShowAdd(true)}>+ Add new Spox</Button>
+        <Button onClick={() => setShowAdd(true)}>+ Add new SPOC</Button>
       )}
       {canEdit && showAdd && (
         <SpoxForm
-          title="Add new Spox"
+          title="Add new SPOC"
           teams={teams}
           staff={staff}
           roles={activeRoles}
           initial={emptyForm(teams, activeRoles)}
-          submitLabel="Add Spox"
+          submitLabel="Add SPOC"
           pending={pending}
           onSubmit={handleCreate}
           onCancel={() => setShowAdd(false)}
@@ -216,7 +216,7 @@ export function SpoxView({
             <h2 className="text-lg font-serif font-semibold text-gray-900">{r.name}</h2>
             {rows.length === 0 ? (
               <p className="mt-2 text-center text-sm italic text-slate-400">
-                No Spox in this role
+                No SPOC in this role
               </p>
             ) : (
               <div className="mt-3 space-y-2">
@@ -224,7 +224,7 @@ export function SpoxView({
                   editing?.id === s.id ? (
                     <SpoxForm
                       key={s.id}
-                      title="Edit Spox"
+                      title="Edit SPOC"
                       teams={teams}
                       staff={staff}
                       roles={activeRoles}
@@ -313,7 +313,7 @@ export function SpoxView({
       {/* Delete confirm modal */}
       {deleting && (
         <ConfirmDialog
-          title="Delete this Spox record?"
+          title="Delete this SPOC record?"
           body="This permanently removes the record and cannot be undone. Use this only for a mistaken entry — to record that someone left, use “Mark as left” instead."
           confirmLabel="Delete record"
           destructive
@@ -594,7 +594,7 @@ function ReplacementDialog({
     <Overlay onClose={onClose}>
       <div className="w-full max-w-lg rounded-xl bg-white p-5 shadow-lg">
         <h3 className="text-lg font-serif font-semibold text-gray-900">
-          Select a replacement Spox
+          Select a replacement SPOC
         </h3>
         <p className="mt-1 text-sm text-slate-500">
           You must select a replacement before marking{" "}
@@ -605,12 +605,12 @@ function ReplacementDialog({
         {addingNew ? (
           <div className="mt-4">
             <SpoxForm
-              title="Add Spox & set as replacement"
+              title="Add SPOC & set as replacement"
               teams={teams}
               staff={staff}
               roles={roles}
               initial={emptyForm(teams, roles, spox.roleId)}
-              submitLabel="Add Spox & set as replacement"
+              submitLabel="Add SPOC & set as replacement"
               pending={pending}
               onSubmit={confirmNew}
               onCancel={
@@ -637,7 +637,7 @@ function ReplacementDialog({
                 }}
                 className={inputClass}
               >
-                <option value="">Select a Spox</option>
+                <option value="">Select a SPOC</option>
                 {candidates.map((c) => (
                   <option key={c.id} value={c.id}>
                     {c.name} · {c.roleName}
@@ -648,7 +648,7 @@ function ReplacementDialog({
                     {c.name} · {c.roleName}
                   </option>
                 ))}
-                <option value="__new__">+ Add new Spox…</option>
+                <option value="__new__">+ Add new SPOC…</option>
               </select>
             </div>
             <div className="mt-5 flex gap-2">

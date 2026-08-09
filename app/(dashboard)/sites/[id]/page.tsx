@@ -1410,17 +1410,17 @@ export default async function SitePage({
           <p className="mt-3 text-xs font-medium text-indigo-600">Open support →</p>
         </Link>
         <Link
-          href={`/sites/${site.id}/spox`}
+          href={`/sites/${site.id}/spoc`}
           id="contacts"
           className="scroll-mt-24 block rounded-xl border border-gray-200 bg-white p-4 shadow-sm transition-colors hover:border-indigo-200 hover:bg-indigo-50/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500/50"
         >
-          <h3 className="text-sm font-medium text-gray-900">Spox</h3>
+          <h3 className="text-sm font-medium text-gray-900">SPOC</h3>
           <p className="mt-1 text-sm text-slate-500">
             {spoxTotal === 0
               ? "Customer contacts by role, internal owners, and replacement history."
               : `${spoxTotal} active${spoxBreakdown ? ` · ${spoxBreakdown}` : ""}`}
           </p>
-          <p className="mt-3 text-xs font-medium text-indigo-600">Open Spox →</p>
+          <p className="mt-3 text-xs font-medium text-indigo-600">Open SPOC →</p>
         </Link>
         <Link
           href={`/sites/${site.id}/hardware`}

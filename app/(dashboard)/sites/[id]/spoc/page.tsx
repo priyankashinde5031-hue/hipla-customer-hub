@@ -115,7 +115,7 @@ export default async function SiteSpoxPage({
 
       <div className="mt-2 flex items-baseline gap-3">
         <h1 className="text-2xl font-serif font-semibold tracking-tight text-gray-900">
-          Spox
+          SPOC
         </h1>
         <span className="text-sm text-slate-500">
           {orgLabel} · {site.name}

@@ -208,17 +208,17 @@ export const CATALOGS: CatalogConfig[] = [
     label: "Internal Teams",
     singular: "Internal Team",
     description:
-      "Hipla teams that can own a customer relationship — the “internal owner” on a Spox contact.",
+      "Hipla teams that can own a customer relationship — the “internal owner” on a SPOC contact.",
     uniqueField: "name",
     fields: [{ key: "name", label: "Name", type: "text", required: true }],
   },
   {
-    slug: "spox-roles",
+    slug: "spoc-roles",
     table: "spox_roles",
-    label: "Spox Roles",
-    singular: "Spox Role",
+    label: "SPOC Roles",
+    singular: "SPOC Role",
     description:
-      "The role a customer contact plays — the grouping and label used on the Spox card.",
+      "The role a customer contact plays — the grouping and label used on the SPOC card.",
     uniqueField: "name",
     fields: [{ key: "name", label: "Name", type: "text", required: true }],
   },
