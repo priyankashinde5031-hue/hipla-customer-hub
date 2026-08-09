@@ -119,7 +119,7 @@ async function DashboardBody({
       action={
         r.siteId ? (
           <a
-            href={`/sites/${r.siteId}/spox`}
+            href={`/sites/${r.siteId}/spoc`}
             className="rounded text-xs font-medium text-indigo-600 hover:text-indigo-700"
           >
             Contact →
