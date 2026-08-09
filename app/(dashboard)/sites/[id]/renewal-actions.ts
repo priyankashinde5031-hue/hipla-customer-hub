@@ -18,6 +18,7 @@ export type RenewalFieldInput = {
   renewalDateOverride: string | null; // yyyy-mm-dd; null = follow the go-live-driven date
   paymentTermsId: string | null; // FK to the Settings payment_terms catalog
   renewalPoTypeId: string | null; // FK to the Settings renewal_po_types catalog
+  hardwareAmcByCustomer: boolean | null; // per-year: is hardware AMC on the customer? null = unanswered
 };
 
 type ActionResult = { error?: string };
@@ -179,6 +180,7 @@ export async function updateRenewal(
     renewal_date_override: input.renewalDateOverride || null,
     payment_terms_id: input.paymentTermsId || null,
     renewal_po_type_id: input.renewalPoTypeId || null,
+    hardware_amc_by_customer: input.hardwareAmcByCustomer,
     updated_at: new Date().toISOString(),
   };
 
@@ -229,7 +231,13 @@ export async function markRenewalDone(
     .eq("id", renewalId);
   if (error) return { error: error.message };
 
-  await writeAudit(supabase, user!.id, "update", renewalId, before, { status: "renewed" });
+  // Record the hardware-AMC decision as part of the "renewed" event, so the
+  // permanent log explicitly captures whether hardware AMC was provided by the
+  // customer for this year at the moment the renewal was completed.
+  await writeAudit(supabase, user!.id, "update", renewalId, before, {
+    status: "renewed",
+    hardware_amc_by_customer: before.hardware_amc_by_customer ?? null,
+  });
 
   // A renewal marked done retroactively recognises its elapsed months (spec §5).
   // Rebuild just this cycle's schedule; writes only revenue_schedule.

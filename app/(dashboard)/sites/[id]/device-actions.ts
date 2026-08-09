@@ -61,6 +61,7 @@ export type AddDeviceInput = {
   hardwareCatalogId: string;
   esperId: string;
   nameOnEsper: string;
+  ownershipTypeId?: string | null; // "Hardware provided by" — optional, nullable
 };
 
 // Add a brand-new device (first install) — no replacement history.
@@ -90,6 +91,7 @@ export async function addDevice(
     hardware_catalog_id: input.hardwareCatalogId,
     esper_id: esperId,
     name_on_esper: nameOnEsper,
+    ownership_type_id: input.ownershipTypeId || null,
   };
   const { data, error } = await supabase
     .from("devices")
@@ -161,6 +163,7 @@ export type ReplaceDeviceInput = {
   approvedBy: string;
   replacedAt: string | null; // yyyy-mm-dd; null → server uses now()
   notes: string | null;
+  ownershipTypeId?: string | null; // "Hardware provided by" for the new unit
 };
 
 // Turn a raised-exception code from the replace_device() RPC into a friendly,
@@ -216,6 +219,17 @@ export async function replaceDevice(
     p_replaced_at: input.replacedAt || null,
   });
   if (error) return mapReplaceError(error.message);
+
+  // Carry "Hardware provided by" onto the freshly-created replacement unit. The
+  // replace_device RPC doesn't take this (informational) column, so set it in a
+  // follow-up update rather than changing the RPC signature. Best-effort: the
+  // replacement itself already succeeded atomically above.
+  if (input.ownershipTypeId) {
+    await supabase
+      .from("devices")
+      .update({ ownership_type_id: input.ownershipTypeId })
+      .eq("id", String(newDeviceId));
+  }
 
   await writeAudit(supabase, user!.id, "replace", "device", String(newDeviceId), null, {
     site_id: siteId,

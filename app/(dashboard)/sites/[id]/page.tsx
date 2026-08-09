@@ -596,11 +596,38 @@ export default async function SitePage({
           `id, po_id, year_number, offset_months, term_months,
            expected_value_paise, renewal_value_paise, renewal_received_date,
            renewal_date_override, payment_terms_id, renewal_po_type_id, status,
+           hardware_amc_by_customer,
            attachment:attachments!attachment_id ( storage_path, original_filename )`,
         )
         .in("po_id", poIds)
         .order("year_number")
     : { data: [] };
+
+  // Smart default for the per-year "Hardware AMC by customer?" toggle, derived
+  // from this site's hardware ownership. We read `implies_customer_amc` off each
+  // active device's ownership type and reduce to a single hint:
+  //   all imply customer AMC → suggest Yes; all imply not → suggest No;
+  //   mixed or none set       → no strong default (null). Only a UI suggestion —
+  // nothing is written until the user saves a renewal. // DECISION: spec §5.4
+  const { data: ownedDeviceRows } = await supabase
+    .from("devices")
+    .select("ownership:hardware_ownership_types ( implies_customer_amc )")
+    .eq("site_id", id)
+    .eq("is_deleted", false);
+  const amcHints = (ownedDeviceRows ?? [])
+    .map((d) => {
+      const o = Array.isArray(d.ownership) ? d.ownership[0] : d.ownership;
+      return (o?.implies_customer_amc ?? null) as boolean | null;
+    })
+    .filter((v): v is boolean => v !== null);
+  const hardwareAmcSuggested: boolean | null =
+    amcHints.length === 0
+      ? null
+      : amcHints.every((v) => v === true)
+        ? true
+        : amcHints.every((v) => v === false)
+          ? false
+          : null;
 
   // "Raised" date shown on each invoice = the date the order/renewal was
   // received (a real business date), distinct from the period/issue date. For a
@@ -743,6 +770,8 @@ export default async function SitePage({
         renewalReceivedDate: r.renewal_received_date,
         paymentTermsId: r.payment_terms_id,
         renewalPoTypeId: r.renewal_po_type_id,
+        hardwareAmcByCustomer: r.hardware_amc_by_customer ?? null,
+        hardwareAmcSuggested,
         status: r.status === "renewed" ? "renewed" : "upcoming",
         attachment: attached,
         breakdown,
