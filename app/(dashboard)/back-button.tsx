@@ -13,6 +13,13 @@ export function BackButton() {
   // The Dashboard home is the top of the app — nothing to go back to.
   if (pathname === "/") return null;
 
+  // Site 360 and its sub-pages render their own labeled back link
+  // ("← Organizations" / "← <Site name>"), which is more informative and goes
+  // to a fixed destination. Suppress the generic control there so those pages
+  // don't show two stacked back links. Any new /sites/[id] page is expected to
+  // provide its own labeled link, matching the existing pattern.
+  if (pathname.startsWith("/sites/")) return null;
+
   return (
     <button
       type="button"
