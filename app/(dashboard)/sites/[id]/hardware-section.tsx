@@ -22,6 +22,7 @@ export type ActiveDevice = {
   hardwareName: string;
   esperId: string;
   nameOnEsper: string;
+  ownershipName: string | null;
   isReplacementUnit: boolean;
 };
 
@@ -50,6 +51,7 @@ export function HardwareSection({
   replacements,
   hardwareOptions,
   approverOptions,
+  ownershipOptions,
 }: {
   siteId: string;
   canEdit: boolean;
@@ -57,6 +59,7 @@ export function HardwareSection({
   replacements: ReplacementRow[];
   hardwareOptions: Option[];
   approverOptions: Option[];
+  ownershipOptions: Option[];
 }) {
   const [showAdd, setShowAdd] = useState(false);
   const [replaceTarget, setReplaceTarget] = useState<ActiveDevice | "pick" | null>(
@@ -102,6 +105,7 @@ export function HardwareSection({
               <th className="px-3 py-2 font-medium">Hardware name</th>
               <th className="px-3 py-2 font-medium">Esper ID</th>
               <th className="px-3 py-2 font-medium">Name on Esper</th>
+              <th className="px-3 py-2 font-medium">Provided by</th>
               <th className="px-3 py-2 font-medium">Status</th>
               {canEdit && <th className="px-3 py-2 text-right font-medium">Actions</th>}
             </tr>
@@ -110,7 +114,7 @@ export function HardwareSection({
             {activeDevices.length === 0 ? (
               <tr>
                 <td
-                  colSpan={canEdit ? 5 : 4}
+                  colSpan={canEdit ? 6 : 5}
                   className="px-3 py-6 text-slate-400"
                 >
                   No hardware recorded for this site yet
@@ -123,6 +127,9 @@ export function HardwareSection({
                   <td className="px-3 py-2 text-slate-700">{d.hardwareName}</td>
                   <td className="px-3 py-2 text-slate-700">{d.esperId}</td>
                   <td className="px-3 py-2 text-slate-700">{d.nameOnEsper}</td>
+                  <td className="px-3 py-2 text-slate-700">
+                    {d.ownershipName ?? <span className="text-slate-400">—</span>}
+                  </td>
                   <td className="px-3 py-2">
                     <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-xs font-medium text-emerald-700">
                       Active
@@ -209,6 +216,7 @@ export function HardwareSection({
             onOpenChange={setShowAdd}
             siteId={siteId}
             hardwareOptions={hardwareOptions}
+            ownershipOptions={ownershipOptions}
           />
           <ReplaceDeviceDialog
             target={replaceTarget}
@@ -217,6 +225,7 @@ export function HardwareSection({
             activeDevices={activeDevices}
             hardwareOptions={hardwareOptions}
             approverOptions={approverOptions}
+            ownershipOptions={ownershipOptions}
           />
         </>
       )}
@@ -278,18 +287,25 @@ function AddHardwareDialog({
   onOpenChange,
   siteId,
   hardwareOptions,
+  ownershipOptions,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   siteId: string;
   hardwareOptions: Option[];
+  ownershipOptions: Option[];
 }) {
-  const [form, setForm] = useState({ hardwareCatalogId: "", esperId: "", nameOnEsper: "" });
+  const [form, setForm] = useState({
+    hardwareCatalogId: "",
+    esperId: "",
+    nameOnEsper: "",
+    ownershipTypeId: "",
+  });
   const [fieldError, setFieldError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
 
   const reset = () => {
-    setForm({ hardwareCatalogId: "", esperId: "", nameOnEsper: "" });
+    setForm({ hardwareCatalogId: "", esperId: "", nameOnEsper: "", ownershipTypeId: "" });
     setFieldError(null);
   };
 
@@ -307,6 +323,7 @@ function AddHardwareDialog({
         hardwareCatalogId: form.hardwareCatalogId,
         esperId: form.esperId,
         nameOnEsper: form.nameOnEsper,
+        ownershipTypeId: form.ownershipTypeId || null,
       });
       if (res.error) {
         if (res.field === "esperId") setFieldError(res.error);
@@ -350,6 +367,22 @@ function AddHardwareDialog({
               {hardwareOptions.map((h) => (
                 <option key={h.id} value={h.id}>
                   {h.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor="add-hw-owner">Hardware provided by</Label>
+            <select
+              id="add-hw-owner"
+              value={form.ownershipTypeId}
+              onChange={(e) => setForm((f) => ({ ...f, ownershipTypeId: e.target.value }))}
+              className={selectClass}
+            >
+              <option value="">Not specified</option>
+              {ownershipOptions.map((o) => (
+                <option key={o.id} value={o.id}>
+                  {o.name}
                 </option>
               ))}
             </select>
@@ -409,6 +442,7 @@ function ReplaceDeviceDialog({
   activeDevices,
   hardwareOptions,
   approverOptions,
+  ownershipOptions,
 }: {
   target: ActiveDevice | "pick" | null;
   onClose: () => void;
@@ -416,6 +450,7 @@ function ReplaceDeviceDialog({
   activeDevices: ActiveDevice[];
   hardwareOptions: Option[];
   approverOptions: Option[];
+  ownershipOptions: Option[];
 }) {
   const open = target !== null;
   // When opened from a specific row, pre-select that device; otherwise ("pick")
@@ -427,6 +462,7 @@ function ReplaceDeviceDialog({
     hardwareCatalogId: "",
     esperId: "",
     nameOnEsper: "",
+    ownershipTypeId: "",
     approvedBy: "",
     replacedAt: todayISO(),
     notes: "",
@@ -443,6 +479,7 @@ function ReplaceDeviceDialog({
       hardwareCatalogId: "",
       esperId: "",
       nameOnEsper: "",
+      ownershipTypeId: "",
       approvedBy: "",
       replacedAt: todayISO(),
       notes: "",
@@ -471,6 +508,7 @@ function ReplaceDeviceDialog({
         approvedBy: form.approvedBy,
         replacedAt: form.replacedAt || null,
         notes: form.notes || null,
+        ownershipTypeId: form.ownershipTypeId || null,
       });
       if (res.error) {
         if (res.field === "esperId") setFieldError(res.error);
@@ -534,6 +572,24 @@ function ReplaceDeviceDialog({
                   {hardwareOptions.map((h) => (
                     <option key={h.id} value={h.id}>
                       {h.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div className="flex flex-col gap-1.5">
+                <Label htmlFor="rep-owner">Hardware provided by</Label>
+                <select
+                  id="rep-owner"
+                  value={form.ownershipTypeId}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, ownershipTypeId: e.target.value }))
+                  }
+                  className={selectClass}
+                >
+                  <option value="">Not specified</option>
+                  {ownershipOptions.map((o) => (
+                    <option key={o.id} value={o.id}>
+                      {o.name}
                     </option>
                   ))}
                 </select>

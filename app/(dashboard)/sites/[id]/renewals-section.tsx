@@ -62,6 +62,8 @@ export type RenewalCardData = {
   renewalReceivedDate: string | null;
   paymentTermsId: string | null;
   renewalPoTypeId: string | null;
+  hardwareAmcByCustomer: boolean | null; // saved answer; null = unanswered
+  hardwareAmcSuggested: boolean | null; // smart default from hardware ownership; null = no strong default
   status: "upcoming" | "renewed";
   attachment: { filename: string; url: string | null } | null;
   breakdown: RenewalBreakdownLine[]; // per-line calculation from the origin PO
@@ -154,6 +156,15 @@ function RenewalCard({
   const [dateOverride, setDateOverride] = useState(renewal.renewalDateOverride ?? "");
   const [termId, setTermId] = useState(renewal.paymentTermsId ?? "");
   const [poTypeId, setPoTypeId] = useState(renewal.renewalPoTypeId ?? "");
+  // Hardware-AMC tri-state as a string for the <select>: "yes" | "no" | "".
+  // Falls back to the ownership-based suggestion when the year is unanswered, so
+  // the toggle pre-fills — but nothing is written until the user saves.
+  const amcFromRenewal = () => {
+    const stored = renewal.hardwareAmcByCustomer;
+    const source = stored === null ? renewal.hardwareAmcSuggested : stored;
+    return source === null ? "" : source ? "yes" : "no";
+  };
+  const [amc, setAmc] = useState(amcFromRenewal());
   const [isSaving, startSave] = useTransition();
   const [isUploading, startUpload] = useTransition();
   const [isEditing, setIsEditing] = useState(false);
@@ -171,6 +182,7 @@ function RenewalCard({
     setDateOverride(renewal.renewalDateOverride ?? "");
     setTermId(renewal.paymentTermsId ?? "");
     setPoTypeId(renewal.renewalPoTypeId ?? "");
+    setAmc(amcFromRenewal());
   }
 
   // Re-seed the inputs when the server row changes underneath us — e.g. editing
@@ -186,6 +198,7 @@ function RenewalCard({
     renewal.renewalDateOverride,
     renewal.paymentTermsId,
     renewal.renewalPoTypeId,
+    renewal.hardwareAmcByCustomer,
     renewal.status,
   ].join("|");
   const lastServerSig = useRef(serverSig);
@@ -227,6 +240,7 @@ function RenewalCard({
       renewalDateOverride: dateOverride || null,
       paymentTermsId: termId || null,
       renewalPoTypeId: poTypeId || null,
+      hardwareAmcByCustomer: amc === "" ? null : amc === "yes",
     };
   }
 
@@ -290,6 +304,26 @@ function RenewalCard({
           <span className="text-sm text-slate-500">
             Expected: {formatPaise(renewal.expectedValuePaise ?? 0)}
           </span>
+          {(() => {
+            const eff = renewal.hardwareAmcByCustomer ?? renewal.hardwareAmcSuggested;
+            if (eff === null) return null;
+            const onlySuggested = renewal.hardwareAmcByCustomer === null;
+            return (
+              <span
+                className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                  eff ? "bg-emerald-50 text-emerald-700" : "bg-slate-100 text-slate-600"
+                }`}
+                title={
+                  onlySuggested
+                    ? "Suggested from hardware ownership — not yet saved"
+                    : "Saved for this renewal year"
+                }
+              >
+                Hardware AMC: {eff ? "Customer" : "Not customer"}
+                {onlySuggested ? " (suggested)" : ""}
+              </span>
+            );
+          })()}
         </div>
         <span className="shrink-0">
           {isDone ? (
@@ -420,6 +454,30 @@ function RenewalCard({
             <p className={readOnlyFieldClass}>
               {describeSchedule(selectedTerm)}
             </p>
+          </div>
+
+          {/* Hardware AMC — per-year yes/no. Pre-fills from hardware ownership
+              (the suggestion) but is only stored once the user saves. */}
+          <div className="flex flex-col gap-1.5">
+            <Label htmlFor={`amc-${renewal.id}`}>Hardware AMC by customer?</Label>
+            <select
+              id={`amc-${renewal.id}`}
+              value={amc}
+              onChange={(e) => setAmc(e.target.value)}
+              disabled={fieldsDisabled}
+              className={inputClass}
+            >
+              <option value="">—</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+            {renewal.hardwareAmcByCustomer === null &&
+              renewal.hardwareAmcSuggested !== null && (
+                <p className="text-xs text-slate-400">
+                  Suggested {renewal.hardwareAmcSuggested ? "“Yes”" : "“No”"} from
+                  hardware ownership — save to confirm.
+                </p>
+              )}
           </div>
         </div>
 

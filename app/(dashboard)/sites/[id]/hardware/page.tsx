@@ -39,10 +39,15 @@ export default async function SiteHardwarePage({
   // active hardware catalog + staff to populate the Add/Replace dropdowns.
   // Device "status" is derived (never stored): a device is active unless it's
   // the old side of a replacement; it's a replacement unit if it's the new side.
-  const [deviceRes, replacementRes, hardwareOptionsRes, approverRes] = await Promise.all([
+  const [deviceRes, replacementRes, hardwareOptionsRes, approverRes, ownershipOptionsRes] =
+    await Promise.all([
     supabase
       .from("devices")
-      .select("id, esper_id, name_on_esper, hardware:hardware_catalog ( name )")
+      .select(
+        `id, esper_id, name_on_esper,
+         hardware:hardware_catalog ( name ),
+         ownership:hardware_ownership_types ( name )`,
+      )
       .eq("site_id", id)
       .eq("is_deleted", false),
     supabase
@@ -55,6 +60,11 @@ export default async function SiteHardwarePage({
       .order("replaced_at", { ascending: false }),
     supabase.from("hardware_catalog").select("id, name").eq("active", true).order("name"),
     supabase.from("internal_users").select("id, name").eq("is_active", true).order("name"),
+    supabase
+      .from("hardware_ownership_types")
+      .select("id, name")
+      .eq("active", true)
+      .order("sort_order"),
   ]);
 
   const deviceRows = deviceRes.data ?? [];
@@ -67,6 +77,10 @@ export default async function SiteHardwarePage({
     const hw = Array.isArray(row.hardware) ? row.hardware[0] : row.hardware;
     return hw?.name ?? "—";
   };
+  const ownershipName = (row: (typeof deviceRows)[number]) => {
+    const o = Array.isArray(row.ownership) ? row.ownership[0] : row.ownership;
+    return o?.name ?? null;
+  };
   const deviceById = new Map(deviceRows.map((d) => [d.id, d]));
 
   // Active = not deleted and not yet replaced (spec §2 derived status).
@@ -77,6 +91,7 @@ export default async function SiteHardwarePage({
       hardwareName: hardwareName(d),
       esperId: d.esper_id,
       nameOnEsper: d.name_on_esper,
+      ownershipName: ownershipName(d),
       isReplacementUnit: replacementNewIds.has(d.id),
     }));
 
@@ -129,6 +144,7 @@ export default async function SiteHardwarePage({
         replacements={replacements}
         hardwareOptions={hardwareOptionsRes.data ?? []}
         approverOptions={approverRes.data ?? []}
+        ownershipOptions={ownershipOptionsRes.data ?? []}
       />
     </div>
   );
