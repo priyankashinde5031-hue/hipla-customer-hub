@@ -15,6 +15,7 @@ const NAV = [
   { href: "/invoices", label: "Invoices" },
   { href: "/revenue", label: "Revenue" },
   { href: "/settings", label: "Settings" },
+  { href: "/guide", label: "Help" },
 ];
 
 export function SidebarNav() {
