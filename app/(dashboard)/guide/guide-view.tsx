@@ -740,9 +740,10 @@ function renderInline(text: string, keyPrefix: string): React.ReactNode {
 function Markdown({ text, className }: { text: string; className?: string }) {
   const blocks: React.ReactNode[] = [];
   let bullets: string[] = [];
+  let tableRows: string[] = [];
   let k = 0;
 
-  const flush = () => {
+  const flushBullets = () => {
     if (bullets.length === 0) return;
     const items = bullets;
     bullets = [];
@@ -755,13 +756,68 @@ function Markdown({ text, className }: { text: string; className?: string }) {
     );
   };
 
+  const flushTable = () => {
+    if (tableRows.length === 0) return;
+    const parsed = tableRows.map((r) =>
+      r.replace(/^\s*\|/, "").replace(/\|\s*$/, "").split("|").map((c) => c.trim()),
+    );
+    const isSep = (cells: string[]) => cells.every((c) => /^:?-{2,}:?$/.test(c));
+    const rows = parsed.filter((cells) => !isSep(cells));
+    tableRows = [];
+    if (rows.length === 0) return;
+    const [header, ...body] = rows;
+    blocks.push(
+      <div key={`tbl-${k++}`} className="my-2 overflow-x-auto">
+        <table className="w-full border-collapse text-sm">
+          <thead>
+            <tr>
+              {header.map((h, i) => (
+                <th
+                  key={i}
+                  className="border-b border-slate-200 px-2 py-1 text-left font-medium text-gray-900"
+                >
+                  {renderInline(h, `th-${k}-${i}`)}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {body.map((row, ri) => (
+              <tr key={ri}>
+                {row.map((c, ci) => (
+                  <td
+                    key={ci}
+                    className="border-b border-slate-100 px-2 py-1 align-top text-slate-700"
+                  >
+                    {renderInline(c, `td-${k}-${ri}-${ci}`)}
+                  </td>
+                ))}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>,
+    );
+  };
+
+  const flush = () => {
+    flushBullets();
+    flushTable();
+  };
+
   for (const raw of text.split("\n")) {
     const line = raw.trim();
     if (line === "") {
       flush();
       continue;
     }
+    if (line.startsWith("|") && line.endsWith("|")) {
+      flushBullets();
+      tableRows.push(line);
+      continue;
+    }
     if (line.startsWith("- ")) {
+      flushTable();
       bullets.push(line.slice(2));
       continue;
     }
