@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createClient } from "@/lib/supabase/server";
-import { JOURNEY, ORIENTATION, SECTIONS } from "@/lib/guide-content";
+import { JOURNEY, ORIENTATION, SECTIONS, proceduresFor } from "@/lib/guide-content";
 
 // The "Ask a question" assistant behind the Help guide (/guide).
 //
@@ -21,6 +21,14 @@ function buildGuideContext(): string {
     .join("\n");
   const sections = SECTIONS.map((s) => {
     const status = s.status === "coming-soon" ? " (NOT BUILT YET — coming soon)" : "";
+    const procs = proceduresFor(s.id)
+      .map(
+        (p) =>
+          `  - ${p.title}: ${p.steps
+            .map((st, i) => `(${i + 1}) ${st.replace(/\*\*/g, "")}`)
+            .join(" ")}`,
+      )
+      .join("\n");
     return [
       `## ${s.title}${status}`,
       `What it is: ${s.what}`,
@@ -28,6 +36,7 @@ function buildGuideContext(): string {
       `Linked to: ${s.linkedTo}`,
       `If you skip it: ${s.ifYouSkip}`,
       s.logic ? `How it works (full logic): ${s.logic}` : "",
+      procs ? `How to use it (step by step):\n${procs}` : "",
       s.path ? `Where in the app: ${s.path}` : "",
     ]
       .filter(Boolean)
