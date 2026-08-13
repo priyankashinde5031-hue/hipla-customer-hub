@@ -7,6 +7,7 @@ import {
   ArrowRight,
   BookOpen,
   Building2,
+  ChevronDown,
   Compass,
   Cpu,
   FileSignature,
@@ -24,6 +25,7 @@ import {
   Rocket,
   Search,
   Send,
+  ScrollText,
   Settings,
   Sparkles,
   TrendingUp,
@@ -35,6 +37,8 @@ import {
   JOURNEY,
   ORIENTATION,
   SECTIONS,
+  proceduresFor,
+  sectionById,
   type GuideSection,
 } from "@/lib/guide-content";
 
@@ -138,7 +142,7 @@ const JOURNEY_STYLE =
   "inline-flex items-center gap-1.5 rounded-full bg-indigo-50 px-3 py-1 text-xs font-medium text-indigo-700";
 
 export function GuideView() {
-  const [tab, setTab] = useState<"browse" | "ask">("browse");
+  const [tab, setTab] = useState<"browse" | "manual" | "ask">("browse");
   const [query, setQuery] = useState("");
   const [activeId, setActiveId] = useState<string>(SECTIONS[0].id);
 
@@ -179,12 +183,24 @@ export function GuideView() {
           label="Browse guide"
         />
         <TabButton
+          active={tab === "manual"}
+          onClick={() => setTab("manual")}
+          icon={<ScrollText className="h-4 w-4" />}
+          label="Full manual"
+        />
+        <TabButton
           active={tab === "ask"}
           onClick={() => setTab("ask")}
           icon={<Sparkles className="h-4 w-4" />}
           label="Ask a question"
         />
       </div>
+
+      {tab === "manual" && (
+        <div className="mt-6">
+          <ManualView />
+        </div>
+      )}
 
       {tab === "ask" && (
         <div className="mt-6">
@@ -330,6 +346,243 @@ function TabButton({
       {icon}
       {label}
     </button>
+  );
+}
+
+// ---- Full manual (long-form doc) -------------------------------------------
+
+function ManualView() {
+  const [open, setOpen] = useState<Set<string>>(() => new Set([SECTIONS[0].id]));
+
+  const toggle = (id: string) =>
+    setOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+
+  const openAndScroll = (id: string) => {
+    setOpen((prev) => new Set(prev).add(id));
+    requestAnimationFrame(() =>
+      document
+        .getElementById(`doc-${id}`)
+        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+    );
+  };
+
+  const stages = JOURNEY.map((j) => ({
+    stage: j,
+    items: SECTIONS.filter((s) => s.journey === j.id),
+  })).filter((g) => g.items.length > 0);
+
+  return (
+    <div className="grid gap-6 md:grid-cols-[minmax(0,220px)_minmax(0,1fr)]">
+      <nav className="md:sticky md:top-4 md:self-start">
+        <div className="mb-3 flex items-center gap-2 text-xs">
+          <button
+            type="button"
+            onClick={() => setOpen(new Set(SECTIONS.map((s) => s.id)))}
+            className="font-medium text-indigo-600 hover:underline"
+          >
+            Expand all
+          </button>
+          <span className="text-slate-300">·</span>
+          <button
+            type="button"
+            onClick={() => setOpen(new Set())}
+            className="text-slate-500 hover:underline"
+          >
+            Collapse all
+          </button>
+        </div>
+        <div className="space-y-3">
+          {stages.map((g) => (
+            <div key={g.stage.id}>
+              <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                {g.stage.label}
+              </p>
+              <ul className="space-y-0.5">
+                {g.items.map((s) => (
+                  <li key={s.id}>
+                    <button
+                      type="button"
+                      onClick={() => openAndScroll(s.id)}
+                      className="flex w-full items-center gap-2 rounded px-1.5 py-1 text-left text-sm text-slate-600 transition hover:bg-slate-100 hover:text-gray-900"
+                    >
+                      <Icon
+                        name={s.icon}
+                        className="h-3.5 w-3.5 shrink-0 text-slate-400"
+                      />
+                      <span className="truncate">{s.title}</span>
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))}
+        </div>
+      </nav>
+
+      <div className="space-y-3">
+        {SECTIONS.map((s) => (
+          <ManualSection
+            key={s.id}
+            section={s}
+            isOpen={open.has(s.id)}
+            onToggle={() => toggle(s.id)}
+            onNavigate={openAndScroll}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ManualSection({
+  section,
+  isOpen,
+  onToggle,
+  onNavigate,
+}: {
+  section: GuideSection;
+  isOpen: boolean;
+  onToggle: () => void;
+  onNavigate: (id: string) => void;
+}) {
+  const procs = proceduresFor(section.id);
+  const related = section.related
+    .map((id) => sectionById(id))
+    .filter((s): s is GuideSection => Boolean(s));
+
+  return (
+    <section
+      id={`doc-${section.id}`}
+      className="scroll-mt-4 rounded-xl border border-slate-200 bg-white"
+    >
+      <button
+        type="button"
+        onClick={onToggle}
+        aria-expanded={isOpen}
+        className="flex w-full items-center gap-3 px-5 py-4 text-left"
+      >
+        <div className="rounded-lg bg-indigo-50 p-2">
+          <Icon name={section.icon} className="h-5 w-5 text-indigo-600" />
+        </div>
+        <div className="min-w-0 flex-1">
+          <h2 className="flex items-center gap-2 text-base font-semibold text-gray-900">
+            {section.title}
+            {section.status === "coming-soon" && (
+              <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+                Coming soon
+              </span>
+            )}
+          </h2>
+          <p className="truncate text-sm text-slate-500">{section.what}</p>
+        </div>
+        <ChevronDown
+          className={`h-5 w-5 shrink-0 text-slate-400 transition ${
+            isOpen ? "rotate-180" : ""
+          }`}
+        />
+      </button>
+
+      {isOpen && (
+        <div className="space-y-5 border-t border-slate-100 px-5 py-5">
+          <ManualBlock label="Overview">{section.what}</ManualBlock>
+          <ManualBlock label="When to use it">{section.when}</ManualBlock>
+
+          {procs.length > 0 && (
+            <div>
+              <p className="mb-2 text-xs font-medium text-slate-400">
+                How to use it — step by step
+              </p>
+              <div className="space-y-3">
+                {procs.map((p, i) => (
+                  <div
+                    key={i}
+                    className="rounded-lg border border-slate-200 p-3"
+                  >
+                    <p className="mb-2 text-sm font-medium text-gray-900">
+                      {p.title}
+                    </p>
+                    <ol className="ml-5 list-decimal space-y-1.5 text-sm leading-relaxed text-slate-700">
+                      {p.steps.map((st, j) => (
+                        <li key={j} className="pl-1">
+                          {renderInline(st, `st-${section.id}-${i}-${j}`)}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="grid gap-4 sm:grid-cols-2">
+            <ManualBlock label="Linked to">{section.linkedTo}</ManualBlock>
+            <ManualBlock label="If you skip it" tone="warning">
+              {section.ifYouSkip}
+            </ManualBlock>
+          </div>
+
+          {section.logic && (
+            <div>
+              <p className="mb-1 text-xs font-medium text-slate-400">
+                How it works — the full logic
+              </p>
+              <Markdown
+                text={section.logic}
+                className="text-sm leading-relaxed text-slate-700"
+              />
+            </div>
+          )}
+
+          {related.length > 0 && (
+            <div className="border-t border-slate-100 pt-3">
+              <p className="mb-2 text-xs font-medium text-slate-400">Related</p>
+              <div className="flex flex-wrap gap-2">
+                {related.map((r) => (
+                  <button
+                    key={r.id}
+                    type="button"
+                    onClick={() => onNavigate(r.id)}
+                    className="inline-flex items-center gap-1.5 rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600 transition hover:border-indigo-200 hover:bg-indigo-50 hover:text-indigo-700"
+                  >
+                    <Icon name={r.icon} className="h-3.5 w-3.5" />
+                    {r.title.split(" — ")[0]}
+                    <ArrowRight className="h-3 w-3" />
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ManualBlock({
+  label,
+  tone,
+  children,
+}: {
+  label: string;
+  tone?: "warning";
+  children: React.ReactNode;
+}) {
+  return (
+    <div>
+      <p
+        className={`mb-1 text-xs font-medium ${
+          tone === "warning" ? "text-amber-600" : "text-slate-400"
+        }`}
+      >
+        {label}
+      </p>
+      <p className="text-sm leading-relaxed text-slate-700">{children}</p>
+    </div>
   );
 }
 
