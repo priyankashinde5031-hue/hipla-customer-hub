@@ -453,3 +453,213 @@ The Users screen (/settings/users) manages internal Hipla users.`,
 export function sectionById(id: string): GuideSection | undefined {
   return SECTIONS.find((s) => s.id === id);
 }
+
+// ---------------------------------------------------------------------------
+// Step-by-step "how to use it in the app" walkthroughs, keyed by section id.
+// Kept separate from SECTIONS so the short cards stay lean; the Full manual view
+// and the assistant both read these. Steps use real screen/button labels and
+// support **bold**. Site-level tasks all start from a Site 360 (open a customer,
+// then one of its sites); the tab names are the Site 360 tabs.
+// ---------------------------------------------------------------------------
+
+export type Procedure = { title: string; steps: string[] };
+
+export const PROCEDURES: Record<string, Procedure[]> = {
+  pos: [
+    {
+      title: "Record a new purchase order",
+      steps: [
+        "Open the **Customers** list, click the customer, then open the **Site** the order is for (its Site 360).",
+        "Go to the **POs** tab and click **Add purchase order**.",
+        "Give the PO a **name** (e.g. “Acme HQ — VMS annual subscription”), then set **PO type**, **Cost type**, **Product / Category** and tick the **Modules covered**.",
+        "Set the **Financial year**, **PO date**, **Payment terms**, **Contract time** and **Renewal term / basis**. Enter **GST %** (leave blank for 0%).",
+        "Add one or more **line items** — Product, Qty and Amount (‘what is being purchased’). The **PO value adds up from these** automatically.",
+        "Attach the signed **PO file**, then **Save**. Renewal projections and the revenue schedule are created from the PO.",
+      ],
+    },
+    {
+      title: "Generate invoices for a PO",
+      steps: [
+        "Open the PO on the **POs** tab.",
+        "Click **Generate invoices** to build the schedule from the payment term — periodic terms split the value evenly across dated invoices; milestone terms split by percentage with blank dates for you to fill.",
+        "Or click **Add single invoice** for a one-off.",
+        "On each invoice set **Bill to site**, **Issue date**, **Due date**, and the **GST number / amount** (recorded for the record, not computed).",
+        "Move the invoice from **Draft** to **Raised** when it's issued.",
+      ],
+    },
+    {
+      title: "Record a payment",
+      steps: [
+        "On the invoice, click **Record payment**.",
+        "Enter the **Amount**, the **Received** date, the **Mode**, and a **Reference** (UTR / cheque no.).",
+        "The invoice advances toward **Cleared** automatically once payments received reach its total, and the site's pending-collection figure drops.",
+      ],
+    },
+  ],
+  revenue: [
+    {
+      title: "Read the revenue picture",
+      steps: [
+        "Click **Revenue** in the left sidebar.",
+        "See this financial year's **ARR**, **recognised vs projected** revenue, the 12 **monthly bars** and the **quarterly** table.",
+        "Use **Revenue → MRR** and **Revenue → Unrecognised** to drill in.",
+      ],
+    },
+    {
+      title: "Fix revenue that isn't being recognised",
+      steps: [
+        "Open **Revenue → Unrecognised** to see line items with no schedule.",
+        "The usual cause is **no anchor** — record the site's **go-live** in its Implementation project so recognition can start.",
+        "The other cause is a line item with **no recognition method** (SaaS / Capex / Opex / One-Time) — set it on the PO line.",
+      ],
+    },
+  ],
+  implementation: [
+    {
+      title: "Run an implementation and record go-live",
+      steps: [
+        "On the Site 360, open the **Implementation** tab and create or open a project.",
+        "**Link a PO** — click **Select a PO** (this is required before go-live).",
+        "Work through the stages (Sales Order → Establish Contact → Hardware Provision → Customer Onboarding → Customer Success Handover), ticking the checklist items.",
+        "At go-live, complete the go-live step (or use **Record a past go-live**) and set the **go-live date**.",
+        "Recording go-live automatically anchors that PO's **renewal dates** and its **revenue schedule**.",
+      ],
+    },
+  ],
+  renewals: [
+    {
+      title: "Review a renewal and mark it done",
+      steps: [
+        "On the Site 360, open the renewals area (each PO shows its **Renewal / Expiry**).",
+        "Each year shows the **Renewal date**, expected value, **Renewal basis** and **Deviation from expected**.",
+        "To mark a year renewed, raise the **Renewal PO** (PO type = Renewal) capturing the actual value — this flips the year to *renewed* and feeds the Revenue engine.",
+        "Committed years (renewed, invoiced, or with a PO file) are locked as history and aren't rewritten when you edit the original PO.",
+      ],
+    },
+  ],
+  hardware: [
+    {
+      title: "Add a device",
+      steps: [
+        "On the Site 360, open the **Hardware** tab and click **Add hardware**.",
+        "Pick the hardware type, enter the **Esper ID** and name, and set **ownership** (customer or Hipla).",
+      ],
+    },
+    {
+      title: "Replace a device",
+      steps: [
+        "On the device, click **Replace device**.",
+        "Enter the new unit's Esper ID under **Replaced by (new Esper ID)**, the reason, and the **Replaced on** date.",
+        "The old device is kept as *replaced* (never deleted) — see **Replacement history**.",
+      ],
+    },
+  ],
+  usage: [
+    {
+      title: "Log a weekly usage entry",
+      steps: [
+        "Open **Usage** in the sidebar (or the Site 360 usage view) and click **Add new weekly entry**.",
+        "Pick the module and week and enter the count.",
+        "Set the **expected per week** for that site + module so the health category (No usage / Low / Healthy / Heavy) is meaningful.",
+      ],
+    },
+  ],
+  support: [
+    {
+      title: "Log a support ticket",
+      steps: [
+        "On the Site 360, open the **Support** tab and click **Log support ticket**.",
+        "Enter the ticket ID, subject and opened date. Add the closed date when it's resolved — status (Open / Closed) is derived from that.",
+      ],
+    },
+  ],
+  contacts: [
+    {
+      title: "Add a contact",
+      steps: [
+        "On the Site 360, open the **Contacts** tab and add a contact.",
+        "Enter name, role (decision maker / approver / end user) and whether they've had Hipla training.",
+      ],
+    },
+    {
+      title: "Replace a contact",
+      steps: [
+        "Remove the contact — you'll be asked to **nominate a replacement**, so the site is never left with no one to reach.",
+        "The removed contact moves to **Former contacts** (kept, not deleted).",
+      ],
+    },
+  ],
+  scope: [
+    {
+      title: "Log a scope change",
+      steps: [
+        "On the Site 360, open the **Scope** tab (Scope Changes).",
+        "Add the change with a description and its impact (e.g. ‘timeline +2 weeks’).",
+        "**Approve** or **Reject** it inline — the entry stays as an auditable record either way.",
+      ],
+    },
+  ],
+  agreements: [
+    {
+      title: "Upload a signed agreement",
+      steps: [
+        "On the Site 360, open the **Agreements** tab and click **Add Agreement**.",
+        "Choose the agreement type and upload the file (up to ~4 MB).",
+      ],
+    },
+  ],
+  addresses: [
+    {
+      title: "Set a site's addresses",
+      steps: [
+        "On the Site 360, open the **Addresses** tab.",
+        "Fill the three addresses — site / physical, **billing** (used on invoices) and **shipping** (used for hardware) — plus the GST number.",
+      ],
+    },
+  ],
+  licenses: [
+    {
+      title: "See a site's licenses",
+      steps: [
+        "On the Site 360, open the **Licenses** tab — it lists the modules from the site's POs. There's nothing to enter; fix it by fixing the PO.",
+      ],
+    },
+  ],
+  org360: [
+    {
+      title: "View a customer roll-up",
+      steps: [
+        "Open **Customers** in the sidebar and click the customer (the HQ).",
+        "See its list of sites plus combined revenue, pending collection and portfolio counts. Click any site to open its Site 360.",
+      ],
+    },
+  ],
+  dashboards: [
+    {
+      title: "Use the home dashboard",
+      steps: [
+        "Click **Dashboard** in the sidebar.",
+        "Filter by period / customer / product at the top.",
+        "Read the KPI tiles (incl. **new-order value** and **renewal-done value** this FY) and the panels for overdue renewals, outstanding invoices, implementations and usage.",
+      ],
+    },
+  ],
+  settings: [
+    {
+      title: "Edit a dropdown / catalog list",
+      steps: [
+        "Click **Settings** in the sidebar and open the catalog you want (Modules, Hardware, PO / Cost types, Payment terms, Ticket topics, Term lengths, Agreement types).",
+        "Add or edit an option — every screen that uses that dropdown updates.",
+        "Two carry logic: **Payment terms** control invoice splitting, and **Term lengths** carry the renewal basis and percentages.",
+      ],
+    },
+    {
+      title: "Manage internal users",
+      steps: ["Open **Settings → Users** to add or manage internal Hipla users."],
+    },
+  ],
+};
+
+export function proceduresFor(id: string): Procedure[] {
+  return PROCEDURES[id] ?? [];
+}
