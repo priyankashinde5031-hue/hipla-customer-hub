@@ -135,3 +135,115 @@ export async function getFyBookings(
     renewalDoneCount,
   };
 }
+
+// A single line on the drill-down pages: which customer, how much, and when.
+export type FyBookingRow = {
+  id: string;
+  customer: string;
+  organizationId: string | null;
+  label: string; // PO name/number, or the renewal PO reference
+  valuePaise: number;
+  date: string | null; // po_received_date / renewal_received_date
+};
+
+export type FyBookingsDetail = {
+  fyLabel: string;
+  windowLabel: string;
+  rows: FyBookingRow[];
+  totalPaise: number;
+};
+
+// Shared: org id → display name.
+async function orgNameMap(supabase: Db): Promise<Map<string, string>> {
+  const { data } = await supabase
+    .from("organizations")
+    .select("id, brand_name, legal_name");
+  const m = new Map<string, string>();
+  for (const o of data ?? []) {
+    m.set(o.id, o.brand_name || o.legal_name || "—");
+  }
+  return m;
+}
+
+// The list of NEW POs that make up the "New order value · FY" tile. Whole
+// portfolio (no dashboard filters), newest first — mirrors the renewals page.
+export async function getNewOrdersDetail(supabase: Db): Promise<FyBookingsDetail> {
+  const fy = fyWindow(todayIso());
+
+  const [posRes, lineItemsRes, orgs] = await Promise.all([
+    supabase
+      .from("purchase_orders")
+      .select("id, organization_id, po_number, name, po_received_date"),
+    supabase.from("po_line_items").select("po_id, amount_paise"),
+    orgNameMap(supabase),
+  ]);
+
+  const poTotalPaise = new Map<string, number>();
+  for (const li of lineItemsRes.data ?? []) {
+    poTotalPaise.set(li.po_id, (poTotalPaise.get(li.po_id) ?? 0) + Number(li.amount_paise));
+  }
+
+  const rows: FyBookingRow[] = [];
+  for (const po of posRes.data ?? []) {
+    const d = po.po_received_date as string | null;
+    if (!d || d < fy.start || d >= fy.end) continue;
+    rows.push({
+      id: po.id,
+      customer: (po.organization_id && orgs.get(po.organization_id)) || "—",
+      organizationId: po.organization_id ?? null,
+      label: po.name ? `${po.po_number} · ${po.name}` : po.po_number,
+      valuePaise: poTotalPaise.get(po.id) ?? 0,
+      date: d,
+    });
+  }
+  rows.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+
+  return {
+    fyLabel: fy.label,
+    windowLabel: fy.windowLabel,
+    rows,
+    totalPaise: rows.reduce((s, r) => s + r.valuePaise, 0),
+  };
+}
+
+// The list of renewals recorded as "renewed" this FY — the "Renewal done value"
+// tile. Whole portfolio, newest first.
+export async function getRenewalsDoneDetail(supabase: Db): Promise<FyBookingsDetail> {
+  const fy = fyWindow(todayIso());
+
+  const [renewalsRes, posRes, orgs] = await Promise.all([
+    supabase
+      .from("renewals")
+      .select("id, po_id, organization_id, status, renewal_value_paise, renewal_received_date"),
+    supabase.from("purchase_orders").select("id, po_number, name"),
+    orgNameMap(supabase),
+  ]);
+
+  const poLabel = new Map<string, string>();
+  for (const po of posRes.data ?? []) {
+    poLabel.set(po.id, po.name ? `${po.po_number} · ${po.name}` : po.po_number);
+  }
+
+  const rows: FyBookingRow[] = [];
+  for (const r of renewalsRes.data ?? []) {
+    if (r.status !== "renewed" || !r.renewal_received_date) continue;
+    const d = r.renewal_received_date as string;
+    if (d < fy.start || d >= fy.end) continue;
+    rows.push({
+      id: r.id,
+      customer: (r.organization_id && orgs.get(r.organization_id)) || "—",
+      organizationId: r.organization_id ?? null,
+      label: (r.po_id && poLabel.get(r.po_id)) || "—",
+      valuePaise: Number(r.renewal_value_paise ?? 0),
+      date: d,
+    });
+  }
+  rows.sort((a, b) => (b.date ?? "").localeCompare(a.date ?? ""));
+
+  return {
+    fyLabel: fy.label,
+    windowLabel: fy.windowLabel,
+    rows,
+    totalPaise: rows.reduce((s, r) => s + r.valuePaise, 0),
+  };
+}
