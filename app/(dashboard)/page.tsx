@@ -197,6 +197,7 @@ async function DashboardBody({
           current financial year (April–March). Filter-aware like the KPIs. */}
       <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
         <FyStatTile
+          href="/new-orders"
           label={`New order value · ${fyBookings.fyLabel}`}
           value={formatPaiseShort(fyBookings.newOrderValuePaise)}
           sub={
@@ -207,6 +208,7 @@ async function DashboardBody({
           caption={fyBookings.windowLabel}
         />
         <FyStatTile
+          href="/renewals-done"
           label={`Renewal done value · ${fyBookings.fyLabel}`}
           value={formatPaiseShort(fyBookings.renewalDoneValuePaise)}
           sub={
