@@ -35,7 +35,14 @@ export function classifyLineItem(i: LineItemClassifyInput): WorklistReason | nul
   // A multi-year single PO must set coverage to the full span (36/60). If the
   // term runs beyond a year but coverage is still the 12 default, flag it for a
   // human to confirm (spec §6, §9). Not a hard error — 12 may be intended.
-  if ((i.contractTermMonths ?? 12) > 12 && i.coverageMonths <= 12) {
+  // A one-time item is exempt: it recognises its full value in the anchor month
+  // and ignores coverage entirely (revenue-engine.ts, spec §3), so "check
+  // coverage months" is a meaningless nudge for it — never flag it here.
+  if (
+    i.recognitionMethod !== "one_time" &&
+    (i.contractTermMonths ?? 12) > 12 &&
+    i.coverageMonths <= 12
+  ) {
     return "coverage_review";
   }
   return null;
