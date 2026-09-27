@@ -29,6 +29,13 @@ describe("classifyLineItem", () => {
   it("multi-year term with proper coverage is fine", () => {
     expect(classifyLineItem({ ...base, contractTermMonths: 36, coverageMonths: 36 })).toBeNull();
   });
+  it("one-time item on a multi-year PO is never a coverage review", () => {
+    // One-time ignores coverage entirely (recognises in full at the anchor), so
+    // the default 12 coverage on a long term is not a problem for it.
+    expect(
+      classifyLineItem({ ...base, recognitionMethod: "one_time", contractTermMonths: 60, coverageMonths: 12 }),
+    ).toBeNull();
+  });
   it("standard anchored + method + 12mo term is fine", () => {
     expect(classifyLineItem(base)).toBeNull();
   });
